@@ -1,4 +1,4 @@
-package com.example.front;
+package com.example.servlet;
 
 import java.io.*;
 import jakarta.servlet.*;
