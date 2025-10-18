@@ -3,20 +3,19 @@
 # ================================
 # CONFIGURATION
 # ================================
-TOMCAT_HOME="/home/antonio/Documents/apache-tomcat-10.1.28"
+TOMCAT_HOME="/home/antonio/Documents/apache-tomcat-10.1.48"
 PROJECT_DIR="/home/antonio/Documents/GitHub/framework"
 WEBAPP_NAME="test"   # Nom du projet dans Tomcat (webapps/test)
-PACKAGE_NAME="com.example.front"
-MAIN_CLASS="FrontServlet"
 
 # ================================
 # Dossiers
 # ================================
-SRC_DIR="$PROJECT_DIR/src"
+SRC_DIR="$PROJECT_DIR/src/main/java"
 BUILD_DIR="$PROJECT_DIR/build"
 DIST_DIR="$PROJECT_DIR/dist"
 WEB_INF="$TOMCAT_HOME/webapps/$WEBAPP_NAME/WEB-INF"
 LIB_DIR="$WEB_INF/lib"
+TOMCAT_WORK_DIR="$TOMCAT_HOME/work/Catalina/localhost/$WEBAPP_NAME"
 
 # ================================
 # Étape 1 : Nettoyage
@@ -48,10 +47,16 @@ if [ $? -ne 0 ]; then
 fi
 
 # ================================
-# Étape 4 : Copie dans Tomcat
+# Étape 4 : Déploiement dans Tomcat
 # ================================
-echo ">>> Déploiement du JAR dans Tomcat..."
+echo ">>> Suppression de l'ancien JAR..."
+rm -f "$LIB_DIR/$WEBAPP_NAME.jar"
+
+echo ">>> Copie du nouveau JAR dans Tomcat..."
 cp "$DIST_DIR/$WEBAPP_NAME.jar" "$LIB_DIR/"
+
+echo ">>> Suppression du cache Tomcat pour forcer le rechargement..."
+rm -rf "$TOMCAT_WORK_DIR"
 
 # ================================
 # Étape 5 : Redémarrage de Tomcat
