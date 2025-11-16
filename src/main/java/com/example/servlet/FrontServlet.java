@@ -21,9 +21,9 @@ public class FrontServlet extends HttpServlet {
 
         String classesPath = getServletContext().getRealPath("/WEB-INF/classes");
         String packageName = "com.example";
-        
+
         // Scan des annotations
-        Map<String, InfoUrl> mappings = AnnotationScanner.scan(classesPath , packageName);
+        Map<String, InfoUrl> mappings = AnnotationScanner.scan(classesPath, packageName);
 
         // Stockage dans le ServletContext
         getServletContext().setAttribute("mappings", mappings);
@@ -43,24 +43,28 @@ public class FrontServlet extends HttpServlet {
             if (mappings != null) {
                 InfoUrl info = mappings.get(path);
                 if (info != null) {
-                    res.setContentType("text/html;charset=UTF-8");
-                    PrintWriter out = res.getWriter();
-
-                    out.println("<html>");
-                    out.println("<head><title>Résultat du mapping</title></head>");
-                    out.println("<body style='font-family: Arial, sans-serif; margin: 20px;'>");
-                    out.println("<h2 style='color: green;'> Chemin trouvé : " + path + "</h2>");
-                    out.println("<p><strong>Classe :</strong> " + info.getNomClasse() + "</p>");
-                    out.println("<p><strong>Méthode :</strong> " + info.getNomMethode() + "</p>");
-                    out.println("</body>");
-                    out.println("</html>");
-
-                    out.close();
+                    servirUrlTrouvee(req, res, info);
                 } else {
                     customServe(req, res);
                 }
             }
         }
+    }
+
+    private void servirUrlTrouvee(HttpServletRequest req, HttpServletResponse res, InfoUrl info) throws IOException {
+        res.setContentType("text/html;charset=UTF-8");
+        PrintWriter out = res.getWriter();
+
+        out.println("<html>");
+        out.println("<head><title>Résultat du mapping</title></head>");
+        out.println("<body style='font-family: Arial, sans-serif; margin: 20px;'>");
+        out.println("<h2 style='color: green;'> Chemin trouvé : " + req.getRequestURI() + "</h2>");
+        out.println("<p><strong>Classe :</strong> " + info.getNomClasse() + "</p>");
+        out.println("<p><strong>Méthode :</strong> " + info.getNomMethode() + "</p>");
+        out.println("</body>");
+        out.println("</html>");
+
+        out.close();
     }
 
     private void customServe(HttpServletRequest req, HttpServletResponse res) throws IOException {
