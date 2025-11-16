@@ -6,6 +6,7 @@ import java.lang.reflect.Method;
 
 import com.example.utils.AnnotationScanner;
 import com.example.utils.InfoUrl;
+import com.example.utils.ModelView;
 
 import jakarta.servlet.*;
 import jakarta.servlet.annotation.*;
@@ -52,50 +53,85 @@ public class FrontServlet extends HttpServlet {
         }
     }
 
-    private void servirUrlTrouvee(HttpServletRequest req, HttpServletResponse res, InfoUrl info) throws IOException {
-        res.setContentType("text/html;charset=UTF-8");
-        try (PrintWriter out = res.getWriter()) {
-            out.println("<html>");
-            out.println("<head><title>Résultat du mapping</title></head>");
-            out.println("<body style='font-family: Arial, sans-serif; margin: 20px;'>");
-            out.println("<h2 style='color: green;'> Chemin trouvé : " + req.getRequestURI() + "</h2>");
+    private void servirUrlTrouvee(HttpServletRequest req, HttpServletResponse res, InfoUrl info) throws IOException, ServletException {
+        try {
+            // Chargement et instanciation de la classe contrôleur
+            Class<?> controllerClass = Class.forName(info.getNomClasse());
+            Object controller = controllerClass.getDeclaredConstructor().newInstance();
 
-            try {
-                // Chargement et instanciation de la classe contrôleur
-                Class<?> controllerClass = Class.forName(info.getNomClasse());
-                Object controller = controllerClass.getDeclaredConstructor().newInstance();
+            // Récupération de la méthode (sans paramètres)
+            Method m = controllerClass.getMethod(info.getNomMethode());
 
-                // Récupération de la méthode (sans paramètres)
-                Method m = controllerClass.getMethod(info.getNomMethode());
+            // Invocation de la méthode
+            Object result = m.invoke(controller);
 
-                // Invocation de la méthode
-                Object result = m.invoke(controller);
+            // Si le type de retour est ModelView, on forward vers la page JSP
+            if (ModelView.class.isAssignableFrom(m.getReturnType()) && result instanceof ModelView) {
+                ModelView modelView = (ModelView) result;
+                String viewName = modelView.getViewName();
+                if (viewName != null && !viewName.isEmpty()) {
+                    // Forward vers la page JSP/HTML
+                    String viewPath = "/" + viewName;
+                    RequestDispatcher dispatcher = getServletContext().getRequestDispatcher(viewPath);
+                    dispatcher.forward(req, res);
+                    return;
+                }
+            }
 
-                // Si le type de retour est String, l'afficher dans la page
-                if (m.getReturnType().equals(String.class) && result != null) {
+            // Si le type de retour est String, l'afficher dans la page
+            if (m.getReturnType().equals(String.class) && result != null) {
+                res.setContentType("text/html;charset=UTF-8");
+                try (PrintWriter out = res.getWriter()) {
+                    out.println("<html>");
+                    out.println("<head><title>Résultat du mapping</title></head>");
+                    out.println("<body style='font-family: Arial, sans-serif; margin: 20px;'>");
+                    out.println("<h2 style='color: green;'> Chemin trouvé : " + req.getRequestURI() + "</h2>");
                     out.println("<div><strong>Résultat de la méthode :</strong></div>");
                     out.println("<pre>" + escapeHtml(result.toString()) + "</pre>");
-                } else {
-                    // Sinon afficher les informations actuelles (et la méthode aura quand même été invoquée)
+                    out.println("</body>");
+                    out.println("</html>");
+                }
+            } else {
+                // Sinon afficher les informations actuelles (et la méthode aura quand même été invoquée)
+                res.setContentType("text/html;charset=UTF-8");
+                try (PrintWriter out = res.getWriter()) {
+                    out.println("<html>");
+                    out.println("<head><title>Résultat du mapping</title></head>");
+                    out.println("<body style='font-family: Arial, sans-serif; margin: 20px;'>");
+                    out.println("<h2 style='color: green;'> Chemin trouvé : " + req.getRequestURI() + "</h2>");
                     out.println("<p><strong>Classe :</strong> " + info.getNomClasse() + "</p>");
                     out.println("<p><strong>Méthode :</strong> " + info.getNomMethode() + "</p>");
+                    out.println("</body>");
+                    out.println("</html>");
                 }
+            }
 
-            } catch (ClassNotFoundException e) {
+        } catch (ClassNotFoundException e) {
+            res.setContentType("text/html;charset=UTF-8");
+            try (PrintWriter out = res.getWriter()) {
+                out.println("<html><body style='font-family: Arial, sans-serif; margin: 20px;'>");
                 out.println("<p style='color:red;'>Classe introuvable: " + info.getNomClasse() + "</p>");
-            } catch (NoSuchMethodException e) {
+                out.println("</body></html>");
+            }
+        } catch (NoSuchMethodException e) {
+            res.setContentType("text/html;charset=UTF-8");
+            try (PrintWriter out = res.getWriter()) {
+                out.println("<html><body style='font-family: Arial, sans-serif; margin: 20px;'>");
                 out.println("<p style='color:red;'>Méthode introuvable: " + info.getNomMethode() + "</p>");
-            } catch (Throwable t) {
+                out.println("</body></html>");
+            }
+        } catch (Throwable t) {
+            res.setContentType("text/html;charset=UTF-8");
+            try (PrintWriter out = res.getWriter()) {
+                out.println("<html><body style='font-family: Arial, sans-serif; margin: 20px;'>");
                 out.println("<p style='color:red;'>Erreur lors de l'invocation: " + escapeHtml(t.toString()) + "</p>");
                 // Pour débogage, afficher la pile d'erreur
                 StringWriter sw = new StringWriter();
                 PrintWriter pw = new PrintWriter(sw);
                 t.printStackTrace(pw);
                 out.println("<pre>" + escapeHtml(sw.toString()) + "</pre>");
+                out.println("</body></html>");
             }
-
-            out.println("</body>");
-            out.println("</html>");
         }
     }
 
