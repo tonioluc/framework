@@ -2,6 +2,7 @@ package com.example.servlet;
 
 import java.io.*;
 import java.util.Map;
+import java.lang.reflect.Method;
 
 import com.example.utils.AnnotationScanner;
 import com.example.utils.InfoUrl;
@@ -21,9 +22,9 @@ public class FrontServlet extends HttpServlet {
 
         String classesPath = getServletContext().getRealPath("/WEB-INF/classes");
         String packageName = "com.example";
-        
+
         // Scan des annotations
-        Map<String, InfoUrl> mappings = AnnotationScanner.scan(classesPath , packageName);
+        Map<String, InfoUrl> mappings = AnnotationScanner.scan(classesPath, packageName);
 
         // Stockage dans le ServletContext
         getServletContext().setAttribute("mappings", mappings);
@@ -43,24 +44,71 @@ public class FrontServlet extends HttpServlet {
             if (mappings != null) {
                 InfoUrl info = mappings.get(path);
                 if (info != null) {
-                    res.setContentType("text/html;charset=UTF-8");
-                    PrintWriter out = res.getWriter();
-
-                    out.println("<html>");
-                    out.println("<head><title>Résultat du mapping</title></head>");
-                    out.println("<body style='font-family: Arial, sans-serif; margin: 20px;'>");
-                    out.println("<h2 style='color: green;'> Chemin trouvé : " + path + "</h2>");
-                    out.println("<p><strong>Classe :</strong> " + info.getNomClasse() + "</p>");
-                    out.println("<p><strong>Méthode :</strong> " + info.getNomMethode() + "</p>");
-                    out.println("</body>");
-                    out.println("</html>");
-
-                    out.close();
+                    servirUrlTrouvee(req, res, info);
                 } else {
                     customServe(req, res);
                 }
             }
         }
+    }
+
+    private void servirUrlTrouvee(HttpServletRequest req, HttpServletResponse res, InfoUrl info) throws IOException {
+        res.setContentType("text/html;charset=UTF-8");
+        try (PrintWriter out = res.getWriter()) {
+            out.println("<html>");
+            out.println("<head><title>Résultat du mapping</title></head>");
+            out.println("<body style='font-family: Arial, sans-serif; margin: 20px;'>");
+            out.println("<h2 style='color: green;'> Chemin trouvé : " + req.getRequestURI() + "</h2>");
+
+            try {
+                // Chargement et instanciation de la classe contrôleur
+                Class<?> controllerClass = Class.forName(info.getNomClasse());
+                Object controller = controllerClass.getDeclaredConstructor().newInstance();
+
+                // Récupération de la méthode (sans paramètres)
+                Method m = controllerClass.getMethod(info.getNomMethode());
+
+                // Invocation de la méthode
+                Object result = m.invoke(controller);
+
+                // Si le type de retour est String, l'afficher dans la page
+                if (m.getReturnType().equals(String.class) && result != null) {
+                    out.println("<div><strong>Résultat de la méthode :</strong></div>");
+                    out.println("<pre>" + escapeHtml(result.toString()) + "</pre>");
+                } else {
+                    // Sinon afficher les informations actuelles (et la méthode aura quand même été invoquée)
+                    out.println("<p><strong>Classe :</strong> " + info.getNomClasse() + "</p>");
+                    out.println("<p><strong>Méthode :</strong> " + info.getNomMethode() + "</p>");
+                }
+
+            } catch (ClassNotFoundException e) {
+                out.println("<p style='color:red;'>Classe introuvable: " + info.getNomClasse() + "</p>");
+            } catch (NoSuchMethodException e) {
+                out.println("<p style='color:red;'>Méthode introuvable: " + info.getNomMethode() + "</p>");
+            } catch (Throwable t) {
+                out.println("<p style='color:red;'>Erreur lors de l'invocation: " + escapeHtml(t.toString()) + "</p>");
+                // Pour débogage, afficher la pile d'erreur
+                StringWriter sw = new StringWriter();
+                PrintWriter pw = new PrintWriter(sw);
+                t.printStackTrace(pw);
+                out.println("<pre>" + escapeHtml(sw.toString()) + "</pre>");
+            }
+
+            out.println("</body>");
+            out.println("</html>");
+        }
+    }
+
+    /**
+     * Petit helper pour échapper du HTML basique afin d'éviter l'injection lors de l'affichage.
+     */
+    private String escapeHtml(String s) {
+        if (s == null) return "";
+        return s.replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\"", "&quot;")
+                .replace("'", "&#x27;");
     }
 
     private void customServe(HttpServletRequest req, HttpServletResponse res) throws IOException {

@@ -15,6 +15,8 @@ BUILD_DIR="$PROJECT_DIR/build"
 DIST_DIR="$PROJECT_DIR/dist"
 WEB_INF="$TOMCAT_HOME/webapps/$WEBAPP_NAME/WEB-INF"
 LIB_DIR="$WEB_INF/lib"
+# Crée le répertoire lib s'il n'existe pas
+mkdir -p "$LIB_DIR"
 TOMCAT_WORK_DIR="$TOMCAT_HOME/work/Catalina/localhost/$WEBAPP_NAME"
 
 # ================================
