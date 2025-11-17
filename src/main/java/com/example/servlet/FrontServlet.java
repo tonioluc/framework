@@ -70,8 +70,16 @@ public class FrontServlet extends HttpServlet {
                 ModelView modelView = (ModelView) result;
                 String viewName = modelView.getViewName();
                 if (viewName != null && !viewName.isEmpty()) {
-                    // Forward vers la page JSP/HTML
-                    String viewPath = "/" + viewName;
+                    // Placer les attributs du modèle dans la requête
+                    Map<String, Object> model = modelView.getData();
+                    if (model != null) {
+                        for (Map.Entry<String, Object> e : model.entrySet()) {
+                            req.setAttribute(e.getKey(), e.getValue());
+                        }
+                    }
+
+                    // Forward vers la page JSP/HTML (s'assure d'avoir un '/')
+                    String viewPath = viewName.startsWith("/") ? viewName : "/" + viewName;
                     RequestDispatcher dispatcher = getServletContext().getRequestDispatcher(viewPath);
                     dispatcher.forward(req, res);
                     return;
