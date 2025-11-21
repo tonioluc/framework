@@ -10,7 +10,8 @@ import java.util.Map;
 
 /**
  * Scanner d'annotations pour détecter toutes les classes de l'application
- * (dans WEB-INF/classes) annotées avec @AnnotationController et leurs méthodes @UrlMethod.
+ * (dans WEB-INF/classes) annotées avec @AnnotationController et leurs
+ * méthodes @UrlMethod.
  */
 public class AnnotationScanner {
 
@@ -23,7 +24,7 @@ public class AnnotationScanner {
      * @param classesPath chemin absolu vers WEB-INF/classes
      * @return une map des URLs → ClasseUtilisataire
      */
-    public static Map<String, InfoUrl> scan(String classesPath , String packageName) {
+    public static Map<String, InfoUrl> scan(String classesPath, String packageName) {
         Map<String, InfoUrl> mapping = new HashMap<>();
 
         System.out.println("=== Démarrage du scanner d'annotations ===");
@@ -55,9 +56,11 @@ public class AnnotationScanner {
     /**
      * Parcourt récursivement le dossier pour trouver les fichiers .class
      */
-    private static void scanDirectory(File directory, String packageName, Map<String, InfoUrl> mapping, String classesRootPath) {
+    private static void scanDirectory(File directory, String packageName, Map<String, InfoUrl> mapping,
+            String classesRootPath) {
         File[] files = directory.listFiles();
-        if (files == null) return;
+        if (files == null)
+            return;
 
         for (File file : files) {
             if (file.isDirectory()) {
@@ -89,9 +92,16 @@ public class AnnotationScanner {
                         String methodUrl = urlMethodAnno.path();
 
                         String finalUrl = (baseUrl + methodUrl).replaceAll("//+", "/");
-                        mapping.put(finalUrl, new InfoUrl(fullClassName, method.getName()));
+                        String regex = finalUrl
+                                .replaceAll("\\{[^/]+\\}", "[^/]+") // remplace {xxx} par une partie capturable
+                                .replaceAll("//+", "/"); // nettoie les doubles //
 
-                        System.out.println("✅ Found mapping: " + finalUrl + " → " + fullClassName + "." + method.getName());
+                        regex = "^" + regex + "$"; // pour match exact
+
+                        mapping.put(finalUrl, new InfoUrl(fullClassName, method.getName(), regex));
+
+                        System.out.println(
+                                "✅ Found mapping: " + finalUrl + " → " + fullClassName + "." + method.getName()+" ; regex: "+regex);
                     }
                 }
             }
