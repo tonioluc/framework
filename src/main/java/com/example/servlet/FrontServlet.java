@@ -48,11 +48,14 @@ public class FrontServlet extends HttpServlet {
                 } else {
                     customServe(req, res);
                 }
+            } else {
+                customServe(req, res);
             }
         }
     }
 
-    private void servirUrlTrouvee(HttpServletRequest req, HttpServletResponse res, InfoUrl info) throws IOException, ServletException {
+    private void servirUrlTrouvee(HttpServletRequest req, HttpServletResponse res, InfoUrl info)
+            throws IOException, ServletException {
         try {
             // Chargement et instanciation de la classe contrôleur
             Class<?> controllerClass = Class.forName(info.getNomClasse());
@@ -99,7 +102,8 @@ public class FrontServlet extends HttpServlet {
                     out.println("</html>");
                 }
             } else {
-                // Sinon afficher les informations actuelles (et la méthode aura quand même été invoquée)
+                // Sinon afficher les informations actuelles (et la méthode aura quand même été
+                // invoquée)
                 res.setContentType("text/html;charset=UTF-8");
                 try (PrintWriter out = res.getWriter()) {
                     out.println("<html>");
@@ -143,10 +147,12 @@ public class FrontServlet extends HttpServlet {
     }
 
     /**
-     * Petit helper pour échapper du HTML basique afin d'éviter l'injection lors de l'affichage.
+     * Petit helper pour échapper du HTML basique afin d'éviter l'injection lors de
+     * l'affichage.
      */
     private String escapeHtml(String s) {
-        if (s == null) return "";
+        if (s == null)
+            return "";
         return s.replace("&", "&amp;")
                 .replace("<", "&lt;")
                 .replace(">", "&gt;")
