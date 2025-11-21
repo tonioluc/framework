@@ -46,8 +46,24 @@ public class FrontServlet extends HttpServlet {
                 if (info != null) {
                     servirUrlTrouvee(req, res, info);
                 } else {
-                    ressourceNonTrouve(req, res);
+                    // 🔍 pas trouvé exactement → essayer regex
+                    InfoUrl matched = null;
+
+                    for (Map.Entry<String, InfoUrl> entry : mappings.entrySet()) {
+                        String regex = entry.getValue().getUrlRegex();
+                        if (regex != null && path.matches(regex)) {
+                            matched = entry.getValue();
+                            break;
+                        }
+                    }
+
+                    if (matched != null) {
+                        servirUrlTrouvee(req, res, matched);
+                    } else {
+                        ressourceNonTrouve(req, res);
+                    }
                 }
+
             } else {
                 ressourceNonTrouve(req, res);
             }

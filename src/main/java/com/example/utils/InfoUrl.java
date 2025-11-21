@@ -4,9 +4,20 @@ public class InfoUrl {
     private String nomClasse;
     private String nomMethode;
 
-    public InfoUrl(String nomClasse, String nomMethode) {
+    private String urlRegex;
+
+    public String getUrlRegex() {
+        return urlRegex;
+    }
+
+    public void setUrlRegex(String urlRegex) {
+        this.urlRegex = urlRegex;
+    }
+
+    public InfoUrl(String nomClasse, String nomMethode, String urlRegex) {
         this.nomClasse = nomClasse;
         this.nomMethode = nomMethode;
+        this.urlRegex = urlRegex;
     }
 
     public String getNomClasse() {
