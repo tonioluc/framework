@@ -38,7 +38,6 @@ public class FrontServlet extends HttpServlet {
         boolean resourceExists = getServletContext().getResource(path) != null;
 
         Map<String, InfoUrl> mappings = (Map<String, InfoUrl>) getServletContext().getAttribute("mappings");
-
         if (resourceExists) {
             defaultServe(req, res);
         } else {
