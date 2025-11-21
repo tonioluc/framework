@@ -46,10 +46,10 @@ public class FrontServlet extends HttpServlet {
                 if (info != null) {
                     servirUrlTrouvee(req, res, info);
                 } else {
-                    customServe(req, res);
+                    ressourceNonTrouve(req, res);
                 }
             } else {
-                customServe(req, res);
+                ressourceNonTrouve(req, res);
             }
         }
     }
@@ -160,7 +160,7 @@ public class FrontServlet extends HttpServlet {
                 .replace("'", "&#x27;");
     }
 
-    private void customServe(HttpServletRequest req, HttpServletResponse res) throws IOException {
+    private void ressourceNonTrouve(HttpServletRequest req, HttpServletResponse res) throws IOException {
         try (PrintWriter out = res.getWriter()) {
             String url = req.getRequestURI();
             res.setContentType("text/html;charset=UTF-8");
