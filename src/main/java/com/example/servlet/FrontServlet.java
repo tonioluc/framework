@@ -97,6 +97,32 @@ public class FrontServlet extends HttpServlet {
         return value; // String par défaut
     }
 
+    private void affichageSimple(HttpServletRequest req, HttpServletResponse res, InfoUrl info) {
+        // Sinon afficher simple retour
+        res.setContentType("text/html;charset=UTF-8");
+        try (PrintWriter out = res.getWriter()) {
+            out.println("<html>");
+            out.println("<head><title>Résultat du mapping</title></head>");
+            out.println("<body style='font-family: Arial, sans-serif; margin: 20px;'>");
+            out.println("<h2 style='color: green;'> Chemin trouvé : " + req.getRequestURI() + "</h2>");
+            out.println("<p><strong>Classe :</strong> " + info.getNomClasse() + "</p>");
+            out.println("<p><strong>Méthode :</strong> " + info.getNomMethode() + "</p>");
+            out.println("</body></html>");
+        }
+    }
+
+    private void displayForReturnTypeString(HttpServletRequest req, HttpServletResponse res, String result) {
+        res.setContentType("text/html;charset=UTF-8");
+        try (PrintWriter out = res.getWriter()) {
+            out.println("<html>");
+            out.println("<head><title>Résultat du mapping</title></head>");
+            out.println("<body style='font-family: Arial, sans-serif; margin: 20px;'>");
+            out.println("<h2 style='color: green;'> Chemin trouvé : " + req.getRequestURI() + "</h2>");
+            out.println("<pre>" + escapeHtml(result.toString()) + "</pre>");
+            out.println("</body></html>");
+        }
+    }
+
     private void servirUrlTrouvee(HttpServletRequest req, HttpServletResponse res, InfoUrl info)
             throws IOException, ServletException {
 
@@ -157,29 +183,11 @@ public class FrontServlet extends HttpServlet {
 
             // Si renvoie une String → l’afficher
             if (result instanceof String) {
-                res.setContentType("text/html;charset=UTF-8");
-                try (PrintWriter out = res.getWriter()) {
-                    out.println("<html>");
-                    out.println("<head><title>Résultat du mapping</title></head>");
-                    out.println("<body style='font-family: Arial, sans-serif; margin: 20px;'>");
-                    out.println("<h2 style='color: green;'> Chemin trouvé : " + req.getRequestURI() + "</h2>");
-                    out.println("<pre>" + escapeHtml(result.toString()) + "</pre>");
-                    out.println("</body></html>");
-                }
+                displayForReturnTypeString(req, res, result);
                 return;
             }
 
-            // Sinon afficher simple retour
-            res.setContentType("text/html;charset=UTF-8");
-            try (PrintWriter out = res.getWriter()) {
-                out.println("<html>");
-                out.println("<head><title>Résultat du mapping</title></head>");
-                out.println("<body style='font-family: Arial, sans-serif; margin: 20px;'>");
-                out.println("<h2 style='color: green;'> Chemin trouvé : " + req.getRequestURI() + "</h2>");
-                out.println("<p><strong>Classe :</strong> " + info.getNomClasse() + "</p>");
-                out.println("<p><strong>Méthode :</strong> " + info.getNomMethode() + "</p>");
-                out.println("</body></html>");
-            }
+            affichageSimple(req, res, info);
 
         } catch (ClassNotFoundException e) {
             res.setContentType("text/html;charset=UTF-8");
@@ -214,10 +222,6 @@ public class FrontServlet extends HttpServlet {
         }
     }
 
-    /**
-     * Petit helper pour échapper du HTML basique afin d'éviter l'injection lors de
-     * l'affichage.
-     */
     private String escapeHtml(String s) {
         if (s == null)
             return "";
@@ -233,6 +237,7 @@ public class FrontServlet extends HttpServlet {
             String url = req.getRequestURI();
             res.setContentType("text/html;charset=UTF-8");
             out.println("<html><head><title>FrontServlet</title></head><body>");
+            out.println("ERREUR 404");
             out.println("<h1>URL demandée : " + url + "</h1>");
             out.println("<p>Ceci est le FrontServlet. Aucune ressource trouvée pour cette URL.</p>");
             out.println("</body></html>");
