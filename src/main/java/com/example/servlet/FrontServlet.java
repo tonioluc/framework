@@ -121,7 +121,7 @@ public class FrontServlet extends HttpServlet {
                 throw new NoSuchMethodException("Méthode introuvable: " + info.getNomMethode());
             }
 
-            // 4️⃣ Construire les arguments réels pour l'invocation
+            // Construire les arguments réels pour l'invocation
             Parameter[] params = m.getParameters();
             Object[] realArgs = new Object[params.length];
 
@@ -131,10 +131,10 @@ public class FrontServlet extends HttpServlet {
                 realArgs[i] = convertValue(rawValue, params[i].getType());
             }
 
-            // 5️⃣ Invocation
+            // Invocation
             Object result = m.invoke(controller, realArgs);
 
-            // 6️⃣ Si méthode renvoie ModelView → forward JSP avec données
+            // Si méthode renvoie ModelView → forward JSP avec données
             if (result instanceof ModelView) {
                 ModelView mv = (ModelView) result;
 
@@ -155,7 +155,7 @@ public class FrontServlet extends HttpServlet {
                 }
             }
 
-            // 7️⃣ Si renvoie une String → l’afficher
+            // Si renvoie une String → l’afficher
             if (result instanceof String) {
                 res.setContentType("text/html;charset=UTF-8");
                 try (PrintWriter out = res.getWriter()) {
@@ -169,7 +169,7 @@ public class FrontServlet extends HttpServlet {
                 return;
             }
 
-            // 8️⃣ Sinon afficher simple retour
+            // Sinon afficher simple retour
             res.setContentType("text/html;charset=UTF-8");
             try (PrintWriter out = res.getWriter()) {
                 out.println("<html>");
