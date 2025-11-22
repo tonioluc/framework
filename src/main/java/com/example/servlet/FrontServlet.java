@@ -1,8 +1,13 @@
 package com.example.servlet;
 
 import java.io.*;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.lang.reflect.Method;
+import java.lang.reflect.Parameter;
 
 import com.example.utils.AnnotationScanner;
 import com.example.utils.InfoUrl;
@@ -46,7 +51,7 @@ public class FrontServlet extends HttpServlet {
                 if (info != null) {
                     servirUrlTrouvee(req, res, info);
                 } else {
-                    // 🔍 pas trouvé exactement → essayer regex
+                    // pas trouvé exactement → essayer regex
                     InfoUrl matched = null;
 
                     for (Map.Entry<String, InfoUrl> entry : mappings.entrySet()) {
@@ -58,6 +63,18 @@ public class FrontServlet extends HttpServlet {
                     }
 
                     if (matched != null) {
+                        Matcher matcher = Pattern.compile(matched.getUrlRegex()).matcher(path);
+                        if (matcher.matches()) {
+                            List<String> names = matched.getParamNames();
+                            Map<String, String> values = new HashMap<>();
+
+                            for (int i = 0; i < names.size(); i++) {
+                                values.put(names.get(i), matcher.group(i + 1));
+                            }
+
+                            // stocker dans la requête
+                            req.setAttribute("pathParams", values);
+                        }
                         servirUrlTrouvee(req, res, matched);
                     } else {
                         ressourceNonTrouve(req, res);
@@ -70,67 +87,98 @@ public class FrontServlet extends HttpServlet {
         }
     }
 
+    private Object convertValue(String value, Class<?> type) {
+        if (type.equals(Integer.class) || type.equals(int.class)) {
+            return Integer.parseInt(value);
+        }
+        if (type.equals(Double.class) || type.equals(double.class)) {
+            return Double.parseDouble(value);
+        }
+        return value; // String par défaut
+    }
+
     private void servirUrlTrouvee(HttpServletRequest req, HttpServletResponse res, InfoUrl info)
             throws IOException, ServletException {
+
         try {
-            // Chargement et instanciation de la classe contrôleur
+            // 1️⃣ Charger la classe du controller
             Class<?> controllerClass = Class.forName(info.getNomClasse());
             Object controller = controllerClass.getDeclaredConstructor().newInstance();
 
-            // Récupération de la méthode (sans paramètres)
-            Method m = controllerClass.getMethod(info.getNomMethode());
+            // 2️⃣ Extraire les paramètres trouvés dans le regex
+            Map<String, String> pathParams = (Map<String, String>) req.getAttribute("pathParams");
 
-            // Invocation de la méthode
-            Object result = m.invoke(controller);
+            // 3️⃣ Trouver la méthode du controller correspondant à info.getNomMethode()
+            Method m = null;
+            for (Method method : controllerClass.getMethods()) {
+                if (method.getName().equals(info.getNomMethode())) {
+                    m = method;
+                    break;
+                }
+            }
 
-            // Si le type de retour est ModelView, on forward vers la page JSP
-            if (ModelView.class.isAssignableFrom(m.getReturnType()) && result instanceof ModelView) {
-                ModelView modelView = (ModelView) result;
-                String viewName = modelView.getViewName();
-                if (viewName != null && !viewName.isEmpty()) {
-                    // Placer les attributs du modèle dans la requête
-                    Map<String, Object> model = modelView.getData();
-                    if (model != null) {
-                        for (Map.Entry<String, Object> e : model.entrySet()) {
-                            req.setAttribute(e.getKey(), e.getValue());
-                        }
+            if (m == null) {
+                throw new NoSuchMethodException("Méthode introuvable: " + info.getNomMethode());
+            }
+
+            // 4️⃣ Construire les arguments réels pour l'invocation
+            Parameter[] params = m.getParameters();
+            Object[] realArgs = new Object[params.length];
+
+            for (int i = 0; i < params.length; i++) {
+                // On prend les paramètres dans l'ordre
+                String rawValue = pathParams.get(info.getParamNames().get(i));
+                realArgs[i] = convertValue(rawValue, params[i].getType());
+            }
+
+            // 5️⃣ Invocation
+            Object result = m.invoke(controller, realArgs);
+
+            // 6️⃣ Si méthode renvoie ModelView → forward JSP avec données
+            if (result instanceof ModelView) {
+                ModelView mv = (ModelView) result;
+
+                // Ajouter les données dans request
+                if (mv.getData() != null) {
+                    for (Map.Entry<String, Object> e : mv.getData().entrySet()) {
+                        req.setAttribute(e.getKey(), e.getValue());
                     }
+                }
 
-                    // Forward vers la page JSP/HTML (s'assure d'avoir un '/')
-                    String viewPath = viewName.startsWith("/") ? viewName : "/" + viewName;
+                String view = mv.getViewName();
+                if (view != null && !view.isEmpty()) {
+                    // S'assure que la vue commence par /
+                    String viewPath = view.startsWith("/") ? view : "/" + view;
                     RequestDispatcher dispatcher = getServletContext().getRequestDispatcher(viewPath);
                     dispatcher.forward(req, res);
                     return;
                 }
             }
 
-            // Si le type de retour est String, l'afficher dans la page
-            if (m.getReturnType().equals(String.class) && result != null) {
+            // 7️⃣ Si renvoie une String → l’afficher
+            if (result instanceof String) {
                 res.setContentType("text/html;charset=UTF-8");
                 try (PrintWriter out = res.getWriter()) {
                     out.println("<html>");
                     out.println("<head><title>Résultat du mapping</title></head>");
                     out.println("<body style='font-family: Arial, sans-serif; margin: 20px;'>");
                     out.println("<h2 style='color: green;'> Chemin trouvé : " + req.getRequestURI() + "</h2>");
-                    out.println("<div><strong>Résultat de la méthode :</strong></div>");
                     out.println("<pre>" + escapeHtml(result.toString()) + "</pre>");
-                    out.println("</body>");
-                    out.println("</html>");
+                    out.println("</body></html>");
                 }
-            } else {
-                // Sinon afficher les informations actuelles (et la méthode aura quand même été
-                // invoquée)
-                res.setContentType("text/html;charset=UTF-8");
-                try (PrintWriter out = res.getWriter()) {
-                    out.println("<html>");
-                    out.println("<head><title>Résultat du mapping</title></head>");
-                    out.println("<body style='font-family: Arial, sans-serif; margin: 20px;'>");
-                    out.println("<h2 style='color: green;'> Chemin trouvé : " + req.getRequestURI() + "</h2>");
-                    out.println("<p><strong>Classe :</strong> " + info.getNomClasse() + "</p>");
-                    out.println("<p><strong>Méthode :</strong> " + info.getNomMethode() + "</p>");
-                    out.println("</body>");
-                    out.println("</html>");
-                }
+                return;
+            }
+
+            // 8️⃣ Sinon afficher simple retour
+            res.setContentType("text/html;charset=UTF-8");
+            try (PrintWriter out = res.getWriter()) {
+                out.println("<html>");
+                out.println("<head><title>Résultat du mapping</title></head>");
+                out.println("<body style='font-family: Arial, sans-serif; margin: 20px;'>");
+                out.println("<h2 style='color: green;'> Chemin trouvé : " + req.getRequestURI() + "</h2>");
+                out.println("<p><strong>Classe :</strong> " + info.getNomClasse() + "</p>");
+                out.println("<p><strong>Méthode :</strong> " + info.getNomMethode() + "</p>");
+                out.println("</body></html>");
             }
 
         } catch (ClassNotFoundException e) {
@@ -140,6 +188,7 @@ public class FrontServlet extends HttpServlet {
                 out.println("<p style='color:red;'>Classe introuvable: " + info.getNomClasse() + "</p>");
                 out.println("</body></html>");
             }
+
         } catch (NoSuchMethodException e) {
             res.setContentType("text/html;charset=UTF-8");
             try (PrintWriter out = res.getWriter()) {
@@ -147,16 +196,19 @@ public class FrontServlet extends HttpServlet {
                 out.println("<p style='color:red;'>Méthode introuvable: " + info.getNomMethode() + "</p>");
                 out.println("</body></html>");
             }
+
         } catch (Throwable t) {
             res.setContentType("text/html;charset=UTF-8");
             try (PrintWriter out = res.getWriter()) {
                 out.println("<html><body style='font-family: Arial, sans-serif; margin: 20px;'>");
                 out.println("<p style='color:red;'>Erreur lors de l'invocation: " + escapeHtml(t.toString()) + "</p>");
-                // Pour débogage, afficher la pile d'erreur
+
+                // stack trace visible
                 StringWriter sw = new StringWriter();
                 PrintWriter pw = new PrintWriter(sw);
                 t.printStackTrace(pw);
                 out.println("<pre>" + escapeHtml(sw.toString()) + "</pre>");
+
                 out.println("</body></html>");
             }
         }
