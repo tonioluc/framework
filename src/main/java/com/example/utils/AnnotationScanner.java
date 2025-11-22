@@ -5,8 +5,12 @@ import com.example.annotation.UrlMethod;
 
 import java.io.File;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Scanner d'annotations pour détecter toutes les classes de l'application
@@ -92,16 +96,26 @@ public class AnnotationScanner {
                         String methodUrl = urlMethodAnno.path();
 
                         String finalUrl = (baseUrl + methodUrl).replaceAll("//+", "/");
-                        String regex = finalUrl
-                                .replaceAll("\\{[^/]+\\}", "[^/]+") // remplace {xxx} par une partie capturable
-                                .replaceAll("//+", "/"); // nettoie les doubles //
+                        Pattern p = Pattern.compile("\\{([^/]+)\\}");
+                        Matcher matcher = p.matcher(finalUrl);
 
-                        regex = "^" + regex + "$"; // pour match exact
+                        List<String> paramNames = new ArrayList<>();
+                        while (matcher.find()) {
+                            paramNames.add(matcher.group(1));
+                        }
 
-                        mapping.put(finalUrl, new InfoUrl(fullClassName, method.getName(), regex));
+                        String regex = finalUrl.replaceAll("\\{[^/]+\\}", "([^/]+)");
+                        regex = "^" + regex + "$";
+
+                        mapping.put(finalUrl, new InfoUrl(
+                                fullClassName,
+                                method.getName(),
+                                regex,
+                                paramNames));
 
                         System.out.println(
-                                "✅ Found mapping: " + finalUrl + " → " + fullClassName + "." + method.getName()+" ; regex: "+regex);
+                                "✅ Found mapping: " + finalUrl + " → " + fullClassName + "." + method.getName()
+                                        + " ; regex: " + regex);
                     }
                 }
             }

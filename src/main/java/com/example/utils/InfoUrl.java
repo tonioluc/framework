@@ -1,8 +1,19 @@
 package com.example.utils;
 
+import java.util.List;
+
 public class InfoUrl {
     private String nomClasse;
     private String nomMethode;
+    private List<String> paramNames;
+
+    public List<String> getParamNames() {
+        return paramNames;
+    }
+
+    public void setParamNames(List<String> paramNames) {
+        this.paramNames = paramNames;
+    }
 
     private String urlRegex;
 
@@ -14,10 +25,11 @@ public class InfoUrl {
         this.urlRegex = urlRegex;
     }
 
-    public InfoUrl(String nomClasse, String nomMethode, String urlRegex) {
+    public InfoUrl(String nomClasse, String nomMethode, String urlRegex, List<String> paramNames) {
         this.nomClasse = nomClasse;
         this.nomMethode = nomMethode;
         this.urlRegex = urlRegex;
+        this.paramNames = paramNames;
     }
 
     public String getNomClasse() {
