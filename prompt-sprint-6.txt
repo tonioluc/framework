@@ -1,0 +1,16 @@
+Maintenant , pour une autre fonctionnalité :
+Si le client envoie les données par la méthode get ou post :
+Si le nom de attribut dans getParameter est égale au nom de l'argument(paramètre) du méthode , il se match automatiquement (la valeur envoyé dans le getParameter est automaqtieuement affecté dans l'argument da la méthode). Par exemple , j'ai cet formulaire dans mon html :
+<form action="/envoie-id" method="post">
+<input name="id" type="number">
+<input type="submit >
+</form>
+
+Et j'ai cet méthode dans le StudentController :
+@UrlMethod(path="/envoie-id")
+public String getIdEtudiantFromForm(Integer id){
+
+}
+
+Il va automatiquement affecter la valeur envoyé venant de la formulaire dans id qui est l'argument du méthode .On mets la valeur du paramètre du méthode d'abord en null puis en utilise la fonction setter pour affecté la valeur dedans. On s'en fout d'abord si les méthod d'envoie est post ou get. On se concentre d'abord sur l'égalitée des noms de l'argument de la méthode et le nom de l'attribut de getParameter.
+Mais avant de me donner les codes , demande moi les questions nécéssaires pour que tu puisses bien réaliser les fonctionnalités que je veux.

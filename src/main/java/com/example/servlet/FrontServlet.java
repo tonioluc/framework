@@ -12,6 +12,7 @@ import java.lang.reflect.Parameter;
 import com.example.utils.AnnotationScanner;
 import com.example.utils.InfoUrl;
 import com.example.utils.ModelView;
+import com.example.utils.ViewHelper;
 
 import jakarta.servlet.*;
 import jakarta.servlet.annotation.*;
@@ -77,12 +78,12 @@ public class FrontServlet extends HttpServlet {
                         }
                         servirUrlTrouvee(req, res, matched);
                     } else {
-                        ressourceNonTrouve(req, res);
+                        ViewHelper.show404(req, res);
                     }
                 }
 
             } else {
-                ressourceNonTrouve(req, res);
+                ViewHelper.show404(req, res);
             }
         }
     }
@@ -101,141 +102,96 @@ public class FrontServlet extends HttpServlet {
             throws IOException, ServletException {
 
         try {
-            // 1️⃣ Charger la classe du controller
+            // 1. Charger la classe du controller
             Class<?> controllerClass = Class.forName(info.getNomClasse());
             Object controller = controllerClass.getDeclaredConstructor().newInstance();
 
-            // 2️⃣ Extraire les paramètres trouvés dans le regex
+            // 2. Récupérer les path parameters (peuvent être null si URL sans {id})
+            @SuppressWarnings("unchecked")
             Map<String, String> pathParams = (Map<String, String>) req.getAttribute("pathParams");
+            if (pathParams == null) {
+                pathParams = new HashMap<>();
+            }
 
-            // 3️⃣ Trouver la méthode du controller correspondant à info.getNomMethode()
-            Method m = null;
-            for (Method method : controllerClass.getMethods()) {
-                if (method.getName().equals(info.getNomMethode())) {
-                    m = method;
+            // 3. Trouver la méthode annotée
+            Method method = null;
+            for (Method m : controllerClass.getMethods()) {
+                if (m.getName().equals(info.getNomMethode())) {
+                    method = m;
                     break;
                 }
             }
-
-            if (m == null) {
-                throw new NoSuchMethodException("Méthode introuvable: " + info.getNomMethode());
+            if (method == null) {
+                throw new NoSuchMethodException("Méthode introuvable : " + info.getNomMethode());
             }
 
-            // Construire les arguments réels pour l'invocation
-            Parameter[] params = m.getParameters();
-            Object[] realArgs = new Object[params.length];
+            // 4. Résolution des paramètres (path param > query param)
+            Parameter[] parameters = method.getParameters();
+            Object[] args = new Object[parameters.length];
 
-            for (int i = 0; i < params.length; i++) {
-                // On prend les paramètres dans l'ordre
-                String rawValue = pathParams.get(info.getParamNames().get(i));
-                realArgs[i] = convertValue(rawValue, params[i].getType());
-            }
+            for (int i = 0; i < parameters.length; i++) {
+                Parameter param = parameters[i];
+                String paramName = param.getName(); // nom du paramètre Java (ex: "id")
 
-            // Invocation
-            Object result = m.invoke(controller, realArgs);
+                String value = null;
 
-            // Si méthode renvoie ModelView → forward JSP avec données
-            if (result instanceof ModelView) {
-                ModelView mv = (ModelView) result;
+                // Priorité 1 : path parameter
+                if (pathParams.containsKey(paramName)) {
+                    value = pathParams.get(paramName);
+                }
+                // Priorité 2 : query parameter
+                else {
+                    value = req.getParameter(paramName);
+                }
 
-                // Ajouter les données dans request
-                if (mv.getData() != null) {
-                    for (Map.Entry<String, Object> e : mv.getData().entrySet()) {
-                        req.setAttribute(e.getKey(), e.getValue());
+                if (value != null) {
+                    args[i] = convertValue(value, param.getType());
+                } else {
+                    // Paramètre non fourni
+                    if (param.getType().isPrimitive()) {
+                        throw new IllegalArgumentException(
+                                "Paramètre obligatoire manquant : " + paramName +
+                                        " (type primitif " + param.getType().getSimpleName() + ")");
                     }
+                    args[i] = null; // OK pour Integer, String, etc.
+                }
+            }
+
+            // 5. Invocation de la méthode
+            Object result = method.invoke(controller, args);
+
+            // 6. Gestion du retour
+            if (result instanceof ModelView mv) {
+                // Ajout des données dans la request
+                if (mv.getData() != null) {
+                    mv.getData().forEach(req::setAttribute);
                 }
 
                 String view = mv.getViewName();
                 if (view != null && !view.isEmpty()) {
-                    // S'assure que la vue commence par /
                     String viewPath = view.startsWith("/") ? view : "/" + view;
-                    RequestDispatcher dispatcher = getServletContext().getRequestDispatcher(viewPath);
-                    dispatcher.forward(req, res);
+                    getServletContext().getRequestDispatcher(viewPath).forward(req, res);
                     return;
                 }
             }
 
-            // Si renvoie une String → l’afficher
-            if (result instanceof String) {
-                res.setContentType("text/html;charset=UTF-8");
-                try (PrintWriter out = res.getWriter()) {
-                    out.println("<html>");
-                    out.println("<head><title>Résultat du mapping</title></head>");
-                    out.println("<body style='font-family: Arial, sans-serif; margin: 20px;'>");
-                    out.println("<h2 style='color: green;'> Chemin trouvé : " + req.getRequestURI() + "</h2>");
-                    out.println("<pre>" + escapeHtml(result.toString()) + "</pre>");
-                    out.println("</body></html>");
-                }
+            if (result instanceof String str) {
+                ViewHelper.showStringResult(req, res, str);
                 return;
             }
 
-            // Sinon afficher simple retour
-            res.setContentType("text/html;charset=UTF-8");
-            try (PrintWriter out = res.getWriter()) {
-                out.println("<html>");
-                out.println("<head><title>Résultat du mapping</title></head>");
-                out.println("<body style='font-family: Arial, sans-serif; margin: 20px;'>");
-                out.println("<h2 style='color: green;'> Chemin trouvé : " + req.getRequestURI() + "</h2>");
-                out.println("<p><strong>Classe :</strong> " + info.getNomClasse() + "</p>");
-                out.println("<p><strong>Méthode :</strong> " + info.getNomMethode() + "</p>");
-                out.println("</body></html>");
-            }
+            // Retour par défaut (void ou autre objet)
+            ViewHelper.showMappingFound(req, res, info);
 
         } catch (ClassNotFoundException e) {
-            res.setContentType("text/html;charset=UTF-8");
-            try (PrintWriter out = res.getWriter()) {
-                out.println("<html><body style='font-family: Arial, sans-serif; margin: 20px;'>");
-                out.println("<p style='color:red;'>Classe introuvable: " + info.getNomClasse() + "</p>");
-                out.println("</body></html>");
-            }
-
+            ViewHelper.showClassNotFound(res, info.getNomClasse());
         } catch (NoSuchMethodException e) {
-            res.setContentType("text/html;charset=UTF-8");
-            try (PrintWriter out = res.getWriter()) {
-                out.println("<html><body style='font-family: Arial, sans-serif; margin: 20px;'>");
-                out.println("<p style='color:red;'>Méthode introuvable: " + info.getNomMethode() + "</p>");
-                out.println("</body></html>");
-            }
-
-        } catch (Throwable t) {
-            res.setContentType("text/html;charset=UTF-8");
-            try (PrintWriter out = res.getWriter()) {
-                out.println("<html><body style='font-family: Arial, sans-serif; margin: 20px;'>");
-                out.println("<p style='color:red;'>Erreur lors de l'invocation: " + escapeHtml(t.toString()) + "</p>");
-
-                // stack trace visible
-                StringWriter sw = new StringWriter();
-                PrintWriter pw = new PrintWriter(sw);
-                t.printStackTrace(pw);
-                out.println("<pre>" + escapeHtml(sw.toString()) + "</pre>");
-
-                out.println("</body></html>");
-            }
-        }
-    }
-
-    /**
-     * Petit helper pour échapper du HTML basique afin d'éviter l'injection lors de
-     * l'affichage.
-     */
-    private String escapeHtml(String s) {
-        if (s == null)
-            return "";
-        return s.replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;")
-                .replace("\"", "&quot;")
-                .replace("'", "&#x27;");
-    }
-
-    private void ressourceNonTrouve(HttpServletRequest req, HttpServletResponse res) throws IOException {
-        try (PrintWriter out = res.getWriter()) {
-            String url = req.getRequestURI();
-            res.setContentType("text/html;charset=UTF-8");
-            out.println("<html><head><title>FrontServlet</title></head><body>");
-            out.println("<h1>URL demandée : " + url + "</h1>");
-            out.println("<p>Ceci est le FrontServlet. Aucune ressource trouvée pour cette URL.</p>");
-            out.println("</body></html>");
+            ViewHelper.showMethodNotFound(res, info.getNomMethode());
+        } catch (IllegalArgumentException e) {
+            ViewHelper.showError(res, "Paramètre invalide ou manquant", e);
+        } catch (Exception e) {
+            ViewHelper.showError(res, "Erreur lors de l'invocation de la méthode",
+                    e.getCause() != null ? e.getCause() : e);
         }
     }
 
