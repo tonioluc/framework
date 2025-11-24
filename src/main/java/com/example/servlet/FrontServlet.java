@@ -12,6 +12,7 @@ import java.lang.reflect.Parameter;
 import com.example.utils.AnnotationScanner;
 import com.example.utils.InfoUrl;
 import com.example.utils.ModelView;
+import com.example.utils.ViewHelper;
 
 import jakarta.servlet.*;
 import jakarta.servlet.annotation.*;
@@ -77,12 +78,12 @@ public class FrontServlet extends HttpServlet {
                         }
                         servirUrlTrouvee(req, res, matched);
                     } else {
-                        ressourceNonTrouve(req, res);
+                        ViewHelper.show404(req, res);
                     }
                 }
 
             } else {
-                ressourceNonTrouve(req, res);
+                ViewHelper.show404(req, res);
             }
         }
     }
@@ -95,32 +96,6 @@ public class FrontServlet extends HttpServlet {
             return Double.parseDouble(value);
         }
         return value; // String par défaut
-    }
-
-    private void affichageSimple(HttpServletRequest req, HttpServletResponse res, InfoUrl info) {
-        // Sinon afficher simple retour
-        res.setContentType("text/html;charset=UTF-8");
-        try (PrintWriter out = res.getWriter()) {
-            out.println("<html>");
-            out.println("<head><title>Résultat du mapping</title></head>");
-            out.println("<body style='font-family: Arial, sans-serif; margin: 20px;'>");
-            out.println("<h2 style='color: green;'> Chemin trouvé : " + req.getRequestURI() + "</h2>");
-            out.println("<p><strong>Classe :</strong> " + info.getNomClasse() + "</p>");
-            out.println("<p><strong>Méthode :</strong> " + info.getNomMethode() + "</p>");
-            out.println("</body></html>");
-        }
-    }
-
-    private void displayForReturnTypeString(HttpServletRequest req, HttpServletResponse res, String result) {
-        res.setContentType("text/html;charset=UTF-8");
-        try (PrintWriter out = res.getWriter()) {
-            out.println("<html>");
-            out.println("<head><title>Résultat du mapping</title></head>");
-            out.println("<body style='font-family: Arial, sans-serif; margin: 20px;'>");
-            out.println("<h2 style='color: green;'> Chemin trouvé : " + req.getRequestURI() + "</h2>");
-            out.println("<pre>" + escapeHtml(result.toString()) + "</pre>");
-            out.println("</body></html>");
-        }
     }
 
     private void servirUrlTrouvee(HttpServletRequest req, HttpServletResponse res, InfoUrl info)
@@ -183,67 +158,19 @@ public class FrontServlet extends HttpServlet {
 
             // Si renvoie une String → l’afficher
             if (result instanceof String) {
-                displayForReturnTypeString(req, res, result);
+                ViewHelper.showStringResult(req, res, (String)result);
                 return;
             }
-
-            affichageSimple(req, res, info);
+            ViewHelper.showMappingFound(req, res, info);
 
         } catch (ClassNotFoundException e) {
-            res.setContentType("text/html;charset=UTF-8");
-            try (PrintWriter out = res.getWriter()) {
-                out.println("<html><body style='font-family: Arial, sans-serif; margin: 20px;'>");
-                out.println("<p style='color:red;'>Classe introuvable: " + info.getNomClasse() + "</p>");
-                out.println("</body></html>");
-            }
-
+            ViewHelper.showClassNotFound(res, info.getNomClasse());
         } catch (NoSuchMethodException e) {
-            res.setContentType("text/html;charset=UTF-8");
-            try (PrintWriter out = res.getWriter()) {
-                out.println("<html><body style='font-family: Arial, sans-serif; margin: 20px;'>");
-                out.println("<p style='color:red;'>Méthode introuvable: " + info.getNomMethode() + "</p>");
-                out.println("</body></html>");
-            }
-
+            ViewHelper.showMethodNotFound(res, info.getNomMethode());
         } catch (Throwable t) {
-            res.setContentType("text/html;charset=UTF-8");
-            try (PrintWriter out = res.getWriter()) {
-                out.println("<html><body style='font-family: Arial, sans-serif; margin: 20px;'>");
-                out.println("<p style='color:red;'>Erreur lors de l'invocation: " + escapeHtml(t.toString()) + "</p>");
-
-                // stack trace visible
-                StringWriter sw = new StringWriter();
-                PrintWriter pw = new PrintWriter(sw);
-                t.printStackTrace(pw);
-                out.println("<pre>" + escapeHtml(sw.toString()) + "</pre>");
-
-                out.println("</body></html>");
-            }
+            ViewHelper.showError(res, "Erreur lors de l'invocation de la méthode", t);
         }
     }
-
-    private String escapeHtml(String s) {
-        if (s == null)
-            return "";
-        return s.replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;")
-                .replace("\"", "&quot;")
-                .replace("'", "&#x27;");
-    }
-
-    private void ressourceNonTrouve(HttpServletRequest req, HttpServletResponse res) throws IOException {
-        try (PrintWriter out = res.getWriter()) {
-            String url = req.getRequestURI();
-            res.setContentType("text/html;charset=UTF-8");
-            out.println("<html><head><title>FrontServlet</title></head><body>");
-            out.println("ERREUR 404");
-            out.println("<h1>URL demandée : " + url + "</h1>");
-            out.println("<p>Ceci est le FrontServlet. Aucune ressource trouvée pour cette URL.</p>");
-            out.println("</body></html>");
-        }
-    }
-
     private void defaultServe(HttpServletRequest req, HttpServletResponse res) throws ServletException, IOException {
         defaultDispatcher.forward(req, res);
     }
