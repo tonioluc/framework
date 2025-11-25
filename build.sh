@@ -4,7 +4,7 @@
 # CONFIGURATION
 # ================================
 TOMCAT_HOME="/home/antonio/Documents/apache-tomcat-10.1.48"
-PROJECT_DIR="/home/antonio/Documents/GitHub/framework"
+PROJECT_DIR="/home/antonio/Bureau/S5/mr-naina/framework"
 WEBAPP_NAME="test"   # Nom du projet dans Tomcat (webapps/test)
 
 # ================================
