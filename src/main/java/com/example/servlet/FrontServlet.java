@@ -9,8 +9,6 @@ import java.util.regex.Pattern;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 
-import com.example.annotation.ParametreRequete;
-import com.example.annotation.VariableChemin;
 import com.example.utils.AnnotationScanner;
 import com.example.utils.InfoUrl;
 import com.example.utils.ModelView;
@@ -127,51 +125,35 @@ public class FrontServlet extends HttpServlet {
                 throw new NoSuchMethodException("Méthode introuvable : " + info.getNomMethode());
             }
 
-            // 4. Résolution des paramètres avec support des annotations
+            // 4. Résolution des paramètres (path param > query param)
             Parameter[] parameters = method.getParameters();
             Object[] args = new Object[parameters.length];
+
             for (int i = 0; i < parameters.length; i++) {
                 Parameter param = parameters[i];
-                String defaultParamName = param.getName(); // Nom de l'argument Java par défaut
-                String value = null;
-                boolean required = true; // Par défaut obligatoire
+                String paramName = param.getName(); // nom du paramètre Java (ex: "id")
 
-                // Check @VariableChemin
-                if (param.isAnnotationPresent(VariableChemin.class)) {
-                    VariableChemin pv = param.getAnnotation(VariableChemin.class);
-                    String paramName = pv.value().isEmpty() ? defaultParamName : pv.value();
-                    required = pv.required();
-                    value = pathParams.get(paramName); // Cherche seulement dans pathParams
+                String value = null;
+
+                // Priorité 1 : path parameter
+                if (pathParams.containsKey(paramName)) {
+                    value = pathParams.get(paramName);
                 }
-                // Check @ParametreRequete
-                else if (param.isAnnotationPresent(ParametreRequete.class)) {
-                    ParametreRequete rp = param.getAnnotation(ParametreRequete.class);
-                    String paramName = rp.value().isEmpty() ? defaultParamName : rp.value();
-                    required = rp.required();
-                    value = req.getParameter(paramName); // Cherche seulement dans query/form params
-                }
-                // Fallback : comportement actuel (path > query)
+                // Priorité 2 : query parameter
                 else {
-                    String paramName = defaultParamName;
-                    value = pathParams.get(paramName); // Priorité path
-                    if (value == null) {
-                        value = req.getParameter(paramName); // Puis query/form
-                    }
+                    value = req.getParameter(paramName);
                 }
+
                 if (value != null) {
                     args[i] = convertValue(value, param.getType());
                 } else {
-                    // Paramètre manquant
-                    if (required) {
-                        if (param.getType().isPrimitive()) {
-                            throw new IllegalArgumentException(
-                                    "Paramètre obligatoire manquant : " + defaultParamName +
-                                            " (type primitif " + param.getType().getSimpleName() + ")");
-                        } else {
-                            throw new IllegalArgumentException("Paramètre obligatoire manquant : " + defaultParamName);
-                        }
+                    // Paramètre non fourni
+                    if (param.getType().isPrimitive()) {
+                        throw new IllegalArgumentException(
+                                "Paramètre obligatoire manquant : " + paramName +
+                                        " (type primitif " + param.getType().getSimpleName() + ")");
                     }
-                    args[i] = null; // OK pour types non-primitifs si non required
+                    args[i] = null; // OK pour Integer, String, etc.
                 }
             }
 
