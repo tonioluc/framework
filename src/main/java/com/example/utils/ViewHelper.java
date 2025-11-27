@@ -3,6 +3,7 @@ package com.example.utils;
 import jakarta.servlet.http.*;
 import java.io.*;
 import java.util.Map;
+import java.util.Set;
 
 public class ViewHelper {
 
@@ -45,10 +46,10 @@ public class ViewHelper {
 
     public static void showMappingFound(HttpServletRequest req, HttpServletResponse res, InfoUrl info) throws IOException {
         String body = """
-            <p class="success"><strong>Chemin trouvé :</strong> %s</p>
+            <p class="success"><strong>Chemin trouve :</strong> %s</p>
             <div class="info">
                 <p><strong>Classe :</strong> %s</p>
-                <p><strong>Méthode :</strong> %s</p>
+                <p><strong>Methode :</strong> %s</p>
             </div>
             <p><a href="/test">Retour à l'accueil</a></p>
             """.formatted(
@@ -56,19 +57,19 @@ public class ViewHelper {
             escape(info.getNomClasse()),
             escape(info.getNomMethode())
         );
-        renderHtml(res, "Mapping trouvé", body);
+        renderHtml(res, "Mapping trouve", body);
     }
 
     public static void showStringResult(HttpServletRequest req, HttpServletResponse res, String result) throws IOException {
         String body = """
-            <p class="success"><strong>Résultat de la méthode :</strong> %s</p>
+            <p class="success"><strong>Resultat de la methode :</strong> %s</p>
             <pre>%s</pre>
             <p><a href="/test">Retour</a></p>
             """.formatted(
             escape(req.getRequestURI()),
             escape(result)
         );
-        renderHtml(res, "Résultat String", body);
+        renderHtml(res, "Resultat String", body);
     }
 
     public static void showError(HttpServletResponse res, String message, Throwable t) throws IOException {
@@ -81,7 +82,7 @@ public class ViewHelper {
 
         String body = """
             <div class="error">
-                <h2>Erreur d'exécution</h2>
+                <h2>Erreur d'execution</h2>
                 <p><strong>%s</strong></p>
                 %s
             </div>
@@ -96,20 +97,20 @@ public class ViewHelper {
     }
 
     public static void showMethodNotFound(HttpServletResponse res, String methodName) throws IOException {
-        showError(res, "Méthode introuvable : <code>" + escape(methodName) + "</code>", null);
+        showError(res, "Methode introuvable : <code>" + escape(methodName) + "</code>", null);
     }
 
     public static void show404(HttpServletRequest req, HttpServletResponse res) throws IOException {
         String body = """
-            <h2 class="error">ERREUR 404 - Page non trouvée</h2>
-            <p>L'URL demandée n'existe pas :</p>
+            <h2 class="error">ERREUR 404 - Page non trouvee</h2>
+            <p>L'URL demandee n'existe pas :</p>
             <p><code>%s</code></p>
             <hr>
-            <p><em>Ceci est géré par FrontServlet. Aucune correspondance dans les annotations @Url.</em></p>
+            <p><em>Ceci est gere par FrontServlet. Aucune correspondance dans les annotations @Url.</em></p>
             <p><a href="/test">Retour à l'accueil</a></p>
             """.formatted(escape(req.getRequestURI()));
 
-        renderHtml(res, "404 - Non trouvé", body);
+        renderHtml(res, "404 - Non trouve", body);
     }
 
     private static String escape(String s) {
@@ -120,4 +121,11 @@ public class ViewHelper {
                 .replace("\"", "&quot;")
                 .replace("'", "&#x27;");
     }
+
+    public static void show405(HttpServletRequest req, HttpServletResponse res, Set<String> allowed)
+    throws IOException {
+    res.setStatus(405);
+    res.setHeader("Allow", String.join(", ", allowed));
+    res.getWriter().println("<h1>405 Method Not Allowed</h1><p>Methodes autorisees : " + allowed + "</p>");
+}
 }

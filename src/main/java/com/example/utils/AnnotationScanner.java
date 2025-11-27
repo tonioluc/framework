@@ -1,129 +1,119 @@
 package com.example.utils;
 
-import com.example.annotation.AnnotationController;
-import com.example.annotation.UrlMethod;
+import com.example.annotation.*;
 
 import java.io.File;
 import java.lang.reflect.Method;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Scanner d'annotations pour détecter toutes les classes de l'application
- * (dans WEB-INF/classes) annotées avec @AnnotationController et leurs
- * méthodes @UrlMethod.
+ * Scanner mis à jour pour supporter @GetMethod, @PostMethod et @UrlMethod
+ * avec gestion multi-méthode HTTP par URL.
  */
+// public className="com.example.utils.AnnotationScanner" updated="2025">
+// */
 public class AnnotationScanner {
 
-    // private static final String BASE_PACKAGE = "com.example";
+    public static Map<String, List<InfoUrl>> scan(String classesPath, String packageName) {
+        Map<String, List<InfoUrl>> mappings = new HashMap<>();
+        System.out.println("=== Démarrage du scanner d'annotations (version HTTP-aware) ===");
 
-    /**
-     * Scanne le dossier WEB-INF/classes de l'application
-     * pour trouver toutes les classes annotées.
-     *
-     * @param classesPath chemin absolu vers WEB-INF/classes
-     * @return une map des URLs → ClasseUtilisataire
-     */
-    public static Map<String, InfoUrl> scan(String classesPath, String packageName) {
-        Map<String, InfoUrl> mapping = new HashMap<>();
-
-        System.out.println("=== Démarrage du scanner d'annotations ===");
-
-        // Vérifie que le dossier existe
         File rootDir = new File(classesPath);
         if (!rootDir.exists() || !rootDir.isDirectory()) {
-            System.err.println("❌ Dossier introuvable : " + classesPath);
-            return mapping;
+            System.err.println("Dossier introuvable : " + classesPath);
+            return mappings;
         }
 
-        // Convertit le package de base en chemin (ex: com/example)
         String basePath = packageName.replace('.', '/');
-
-        // Dossier de base à partir duquel commencer le scan
         File baseDir = new File(rootDir, basePath);
-
         if (!baseDir.exists()) {
-            System.err.println("⚠️ Aucun dossier " + basePath + " trouvé dans " + classesPath);
-            return mapping;
+            System.err.println("Package non trouvé : " + basePath);
+            return mappings;
         }
 
-        // Démarre le scan récursif
-        scanDirectory(baseDir, packageName, mapping, classesPath);
-
-        return mapping;
+        scanDirectory(baseDir, packageName, mappings, classesPath);
+        System.out.println("Scan terminé. " + mappings.size() + " URLs mappées.");
+        return mappings;
     }
 
-    /**
-     * Parcourt récursivement le dossier pour trouver les fichiers .class
-     */
-    private static void scanDirectory(File directory, String packageName, Map<String, InfoUrl> mapping,
-            String classesRootPath) {
+    private static void scanDirectory(File directory, String packageName,
+            Map<String, List<InfoUrl>> mappings, String classesRootPath) {
         File[] files = directory.listFiles();
         if (files == null)
             return;
 
         for (File file : files) {
             if (file.isDirectory()) {
-                // 🔁 Appel récursif
-                scanDirectory(file, packageName + "." + file.getName(), mapping, classesRootPath);
+                scanDirectory(file, packageName + "." + file.getName(), mappings, classesRootPath);
             } else if (file.getName().endsWith(".class")) {
-                // Supprime l'extension .class
                 String className = file.getName().substring(0, file.getName().length() - 6);
                 String fullClassName = packageName + "." + className;
-                processClass(fullClassName, mapping);
+                processClass(fullClassName, mappings);
             }
         }
     }
 
-    /**
-     * Vérifie si la classe a les annotations voulues et ajoute les mappings.
-     */
-    private static void processClass(String fullClassName, Map<String, InfoUrl> mapping) {
+    private static void processClass(String fullClassName, Map<String, List<InfoUrl>> mappings) {
         try {
             Class<?> clazz = Class.forName(fullClassName);
 
-            if (clazz.isAnnotationPresent(AnnotationController.class)) {
-                AnnotationController controllerAnno = clazz.getAnnotation(AnnotationController.class);
-                String baseUrl = controllerAnno.url();
+            if (!clazz.isAnnotationPresent(AnnotationController.class)) {
+                return;
+            }
 
-                for (Method method : clazz.getDeclaredMethods()) {
-                    if (method.isAnnotationPresent(UrlMethod.class)) {
-                        UrlMethod urlMethodAnno = method.getAnnotation(UrlMethod.class);
-                        String methodUrl = urlMethodAnno.path();
+            AnnotationController controllerAnno = clazz.getAnnotation(AnnotationController.class);
+            String baseUrl = controllerAnno.url();
 
-                        String finalUrl = (baseUrl + methodUrl).replaceAll("//+", "/");
-                        Pattern p = Pattern.compile("\\{([^/]+)\\}");
-                        Matcher matcher = p.matcher(finalUrl);
-
-                        List<String> paramNames = new ArrayList<>();
-                        while (matcher.find()) {
-                            paramNames.add(matcher.group(1));
-                        }
-
-                        String regex = finalUrl.replaceAll("\\{[^/]+\\}", "([^/]+)");
-                        regex = "^" + regex + "$";
-
-                        mapping.put(finalUrl, new InfoUrl(
-                                fullClassName,
-                                method.getName(),
-                                regex,
-                                paramNames));
-
-                        System.out.println(
-                                "✅ Found mapping: " + finalUrl + " → " + fullClassName + "." + method.getName()
-                                        + " ; regex: " + regex);
-                    }
+            for (Method method : clazz.getDeclaredMethods()) {
+                // 1. @GetMethod
+                if (method.isAnnotationPresent(GetMethod.class)) {
+                    registerMapping(method, method.getAnnotation(GetMethod.class).path(),
+                            baseUrl, fullClassName, method.getName(), Set.of("GET", "HEAD"), mappings);
+                }
+                // 2. @PostMethod
+                else if (method.isAnnotationPresent(PostMethod.class)) {
+                    registerMapping(method, method.getAnnotation(PostMethod.class).path(),
+                            baseUrl, fullClassName, method.getName(), Set.of("POST"), mappings);
+                }
+                // 3. Ancien @UrlMethod → accepte GET + POST (rétrocompatibilité)
+                else if (method.isAnnotationPresent(UrlMethod.class)) {
+                    UrlMethod ann = method.getAnnotation(UrlMethod.class);
+                    registerMapping(method, ann.path(), baseUrl, fullClassName, method.getName(),
+                            Set.of("GET", "POST", "HEAD"), mappings);
                 }
             }
-        } catch (ClassNotFoundException e) {
-            System.err.println("❌ Classe introuvable : " + fullClassName);
-        } catch (Throwable t) {
-            System.err.println("⚠️ Erreur sur la classe : " + fullClassName);
-            t.printStackTrace();
+        } catch (Exception e) {
+            System.err.println("Erreur lors du scan de la classe : " + fullClassName);
+            e.printStackTrace();
         }
+    }
+
+    private static void registerMapping(Method method, String methodPath, String baseUrl,
+            String className, String methodName,
+            Set<String> httpMethods,
+            Map<String, List<InfoUrl>> mappings) {
+
+        String fullUrl = (baseUrl + methodPath).replaceAll("//+", "/");
+        if (fullUrl.isEmpty()) {
+            fullUrl = "/";
+        }
+        // Extraction des noms de paramètres {id} → ["id"]
+        Pattern p = Pattern.compile("\\{([^/]+)\\}");
+        Matcher matcher = p.matcher(fullUrl);
+        List<String> paramNames = new ArrayList<>();
+        while (matcher.find()) {
+            paramNames.add(matcher.group(1));
+        }
+
+        String regex = "^" + fullUrl.replaceAll("\\{[^/]+\\}", "([^/]+)") + "$";
+
+        InfoUrl infoUrl = new InfoUrl(className, methodName, regex, paramNames, httpMethods);
+
+        mappings.computeIfAbsent(fullUrl, k -> new ArrayList<>()).add(infoUrl);
+
+        System.out.printf("Mapped: %8s %-30s → %s.%s()%n",
+                httpMethods, fullUrl, className.substring(className.lastIndexOf('.') + 1), methodName);
     }
 }
