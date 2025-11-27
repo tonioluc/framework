@@ -2,8 +2,10 @@ package com.example.servlet;
 
 import java.io.*;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.lang.reflect.Method;
@@ -28,66 +30,118 @@ public class FrontServlet extends HttpServlet {
     @Override
     public void init() {
         defaultDispatcher = getServletContext().getNamedDispatcher("default");
-
         String classesPath = getServletContext().getRealPath("/WEB-INF/classes");
         String packageName = "com.example";
 
-        // Scan des annotations
-        Map<String, InfoUrl> mappings = AnnotationScanner.scan(classesPath, packageName);
+        // Nouveau : Map<String, List<InfoUrl>>
+        Map<String, List<InfoUrl>> mappings = AnnotationScanner.scan(classesPath, packageName);
 
-        // Stockage dans le ServletContext
         getServletContext().setAttribute("mappings", mappings);
     }
 
     @Override
     protected void service(HttpServletRequest req, HttpServletResponse res) throws ServletException, IOException {
         String path = req.getRequestURI().substring(req.getContextPath().length());
+        if (path.isEmpty())
+            path = "/";
 
         boolean resourceExists = getServletContext().getResource(path) != null;
 
-        Map<String, InfoUrl> mappings = (Map<String, InfoUrl>) getServletContext().getAttribute("mappings");
+        @SuppressWarnings("unchecked")
+        Map<String, List<InfoUrl>> mappings = (Map<String, List<InfoUrl>>) getServletContext().getAttribute("mappings");
+
         if (resourceExists) {
             defaultServe(req, res);
-        } else {
-            if (mappings != null) {
-                InfoUrl info = mappings.get(path);
-                if (info != null) {
-                    servirUrlTrouvee(req, res, info);
-                } else {
-                    // pas trouvé exactement → essayer regex
-                    InfoUrl matched = null;
+            return;
+        }
 
-                    for (Map.Entry<String, InfoUrl> entry : mappings.entrySet()) {
-                        String regex = entry.getValue().getUrlRegex();
-                        if (regex != null && path.matches(regex)) {
-                            matched = entry.getValue();
-                            break;
-                        }
-                    }
+        if (mappings == null || mappings.isEmpty()) {
+            ViewHelper.show404(req, res);
+            return;
+        }
 
-                    if (matched != null) {
-                        Matcher matcher = Pattern.compile(matched.getUrlRegex()).matcher(path);
-                        if (matcher.matches()) {
-                            List<String> names = matched.getParamNames();
-                            Map<String, String> values = new HashMap<>();
+        String httpMethod = req.getMethod(); // GET, POST, etc.
 
-                            for (int i = 0; i < names.size(); i++) {
-                                values.put(names.get(i), matcher.group(i + 1));
-                            }
+        // 1. Recherche exacte
+        List<InfoUrl> candidates = mappings.get(path);
+        InfoUrl selected = selectByHttpMethod(candidates, httpMethod);
 
-                            // stocker dans la requête
-                            req.setAttribute("pathParams", values);
-                        }
-                        servirUrlTrouvee(req, res, matched);
-                    } else {
-                        ViewHelper.show404(req, res);
+        // 2. Si pas trouvé → recherche par regex
+        if (selected == null) {
+            selected = findByRegex(path, mappings, httpMethod, req);
+        }
+
+        // 3. Si toujours pas trouvé
+        if (selected == null) {
+            // On cherche toutes les méthodes autorisées pour cette URL (exacte ou regex)
+            Set<String> allowed = new HashSet<>();
+
+            // Exacte
+            if (candidates != null) {
+                for (InfoUrl info : candidates) {
+                    allowed.addAll(info.getHttpMethods());
+                }
+            }
+
+            // Regex
+            for (Map.Entry<String, List<InfoUrl>> entry : mappings.entrySet()) {
+                for (InfoUrl info : entry.getValue()) {
+                    if (info.getUrlRegex() != null && path.matches(info.getUrlRegex())) {
+                        allowed.addAll(info.getHttpMethods());
                     }
                 }
+            }
 
-            } else {
+            if (allowed.isEmpty()) {
                 ViewHelper.show404(req, res);
+            } else {
+                ViewHelper.show405(req, res, allowed);
+            }
+            return;
+        }
+
+        // On a trouvé la bonne méthode → on exécute
+        servirUrlTrouvee(req, res, selected);
+    }
+
+    /**
+     * Sélectionne la bonne InfoUrl parmi les candidates selon la méthode HTTP
+     */
+    private InfoUrl selectByHttpMethod(List<InfoUrl> candidates, String httpMethod) {
+        if (candidates == null || candidates.isEmpty()) return null;
+        for (InfoUrl info : candidates) {
+            if (info.supportsMethod(httpMethod)) {
+                return info;
             }
         }
+        return null;
+    }
+
+    /**
+     * Recherche par expression régulière + méthode HTTP
+     */
+    private InfoUrl findByRegex(String path, Map<String, List<InfoUrl>> mappings, String httpMethod, HttpServletRequest req) {
+        for (Map.Entry<String, List<InfoUrl>> entry : mappings.entrySet()) {
+            for (InfoUrl info : entry.getValue()) {
+                String regex = info.getUrlRegex();
+                if (regex != null && path.matches(regex)) {
+                    if (info.supportsMethod(httpMethod)) {
+                        // Extraction des paramètres de chemin {id}, {name}, etc.
+                        Matcher matcher = Pattern.compile(regex).matcher(path);
+                        if (matcher.matches()) {
+                            List<String> names = info.getParamNames();
+                            Map<String, String> pathParams = new HashMap<>();
+                            for (int i = 0; i < names.size(); i++) {
+                                pathParams.put(names.get(i), matcher.group(i + 1));
+                            }
+                            req.setAttribute("pathParams", pathParams);
+                        }
+                        return info;
+                    }
+                }
+            }
+        }
+        return null;
     }
 
     private Object convertValue(String value, Class<?> type) {
