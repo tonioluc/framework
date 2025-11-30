@@ -186,9 +186,24 @@ public class FrontServlet extends HttpServlet {
             Object[] args = new Object[parameters.length];
             for (int i = 0; i < parameters.length; i++) {
                 Parameter param = parameters[i];
+                Class<?> paramType = param.getType();
                 String defaultParamName = param.getName(); // Nom de l'argument Java par défaut
                 String value = null;
                 boolean required = true; // Par défaut obligatoire
+
+                if (Map.class.isAssignableFrom(paramType)) {
+                    // Injection d'une Map pour tous les paramètres
+                    Map<String, Object> allParams = new HashMap<>();
+                    req.getParameterMap().forEach((key, values) -> {
+                        if (values.length == 1) {
+                            allParams.put(key, values[0]);
+                        } else {
+                            allParams.put(key, values);
+                        }
+                    });
+                    args[i] = allParams;
+                    continue;
+                }
 
                 // Check @VariableChemin
                 if (param.isAnnotationPresent(VariableChemin.class)) {
