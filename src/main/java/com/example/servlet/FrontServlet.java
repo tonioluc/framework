@@ -10,6 +10,8 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
 
 import com.example.annotation.ParametreRequete;
 import com.example.annotation.VariableChemin;
@@ -108,7 +110,8 @@ public class FrontServlet extends HttpServlet {
      * Sélectionne la bonne InfoUrl parmi les candidates selon la méthode HTTP
      */
     private InfoUrl selectByHttpMethod(List<InfoUrl> candidates, String httpMethod) {
-        if (candidates == null || candidates.isEmpty()) return null;
+        if (candidates == null || candidates.isEmpty())
+            return null;
         for (InfoUrl info : candidates) {
             if (info.supportsMethod(httpMethod)) {
                 return info;
@@ -120,7 +123,8 @@ public class FrontServlet extends HttpServlet {
     /**
      * Recherche par expression régulière + méthode HTTP
      */
-    private InfoUrl findByRegex(String path, Map<String, List<InfoUrl>> mappings, String httpMethod, HttpServletRequest req) {
+    private InfoUrl findByRegex(String path, Map<String, List<InfoUrl>> mappings, String httpMethod,
+            HttpServletRequest req) {
         for (Map.Entry<String, List<InfoUrl>> entry : mappings.entrySet()) {
             for (InfoUrl info : entry.getValue()) {
                 String regex = info.getUrlRegex();
@@ -187,21 +191,42 @@ public class FrontServlet extends HttpServlet {
             for (int i = 0; i < parameters.length; i++) {
                 Parameter param = parameters[i];
                 Class<?> paramType = param.getType();
-                String defaultParamName = param.getName(); // Nom de l'argument Java par défaut
+                String defaultParamName = param.getName();
                 String value = null;
-                boolean required = true; // Par défaut obligatoire
+                boolean required = true;
 
                 if (Map.class.isAssignableFrom(paramType)) {
-                    // Injection d'une Map pour tous les paramètres
-                    Map<String, Object> allParams = new HashMap<>();
-                    req.getParameterMap().forEach((key, values) -> {
-                        if (values.length == 1) {
-                            allParams.put(key, values[0]);
-                        } else {
-                            allParams.put(key, values);
+                    // Vérifier les types génériques
+                    Type genericType = param.getParameterizedType();
+
+                    if (genericType instanceof ParameterizedType) {
+                        ParameterizedType pType = (ParameterizedType) genericType;
+                        Type[] typeArguments = pType.getActualTypeArguments();
+
+                        if (typeArguments.length >= 2) {
+                            // Vérifier si la clé est String et la valeur Object
+                            boolean isKeyString = typeArguments[0] == String.class;
+                            boolean isValueObject = typeArguments[1] == Object.class;
+
+                            if (isKeyString && isValueObject) {
+                                System.out.println("Map<String, Object> détecté");
+                                // Créer la Map avec les types spécifiques
+                                Map<String, Object> allParams = new HashMap<>();
+                                req.getParameterMap().forEach((key, values) -> {
+                                    if (values.length == 1) {
+                                        allParams.put(key, values[0]);
+                                    } else {
+                                        allParams.put(key, values);
+                                    }
+                                });
+                                args[i] = allParams;
+                            } else {
+                                System.out.println("Map d'un autre type: " +
+                                        typeArguments[0] + ", " + typeArguments[1]);
+                                // Gérer d'autres types de Map si nécessaire
+                            }
                         }
-                    });
-                    args[i] = allParams;
+                    }
                     continue;
                 }
 
