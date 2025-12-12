@@ -1,6 +1,8 @@
 package com.example.servlet;
 
 import java.io.*;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -8,6 +10,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.lang.reflect.ParameterizedType;
@@ -230,6 +233,26 @@ public class FrontServlet extends HttpServlet {
                     continue;
                 }
 
+                // Nouveau : cas objet custom (non primitif, non String, non Map, etc.)
+                if (!paramType.isPrimitive() && !paramType.equals(String.class)
+                        && !Map.class.isAssignableFrom(paramType) && !paramType.isArray()
+                        && !Collection.class.isAssignableFrom(paramType)) {
+                    // C'est un objet custom → on crée l'instance et bind les params
+                    Object obj = paramType.getDeclaredConstructor().newInstance();
+                    String prefix = paramType.getSimpleName() + "."; // Ex: "Etudiant."
+
+                    // Parcourir tous les request params qui commencent par prefix
+                    req.getParameterMap().forEach((key, values) -> {
+                        if (key.startsWith(prefix)) {
+                            String propertyPath = key.substring(prefix.length()); // Ex: "nom" ou "s.id"
+                            setPropertyByPath(obj, propertyPath, values);
+                        }
+                    });
+
+                    args[i] = obj;
+                    continue;
+                }
+
                 // Check @VariableChemin
                 if (param.isAnnotationPresent(VariableChemin.class)) {
                     VariableChemin pv = param.getAnnotation(VariableChemin.class);
@@ -305,6 +328,78 @@ public class FrontServlet extends HttpServlet {
         } catch (Exception e) {
             ViewHelper.showError(res, "Erreur lors de l'invocation de la méthode",
                     e.getCause() != null ? e.getCause() : e);
+        }
+    }
+
+    // Nouvelle méthode helper pour set les properties par path (gère imbriqués et
+    // listes)
+    private void setPropertyByPath(Object obj, String path, String[] values) {
+        String[] parts = path.split("\\.");
+        Object current = obj;
+
+        for (int j = 0; j < parts.length - 1; j++) {
+            String part = parts[j];
+            Field field = getField(current.getClass(), part);
+            if (field == null)
+                return; // Ignorer si non trouvé
+
+            field.setAccessible(true);
+            try {
+                Object next = field.get(current);
+                if (next == null) {
+                    if (List.class.isAssignableFrom(field.getType())) {
+                        next = new ArrayList<>();
+                        field.set(current, next);
+                    } else {
+                        next = field.getType().getDeclaredConstructor().newInstance();
+                        field.set(current, next);
+                    }
+                }
+                current = next;
+            } catch (Exception e) {
+                e.printStackTrace();
+                return;
+            }
+        }
+
+        // Dernière partie : set la valeur
+        String lastPart = parts[parts.length - 1];
+        Field lastField = getField(current.getClass(), lastPart);
+        if (lastField == null)
+            return;
+
+        lastField.setAccessible(true);
+        try {
+            Class<?> fieldType = lastField.getType();
+            Object val;
+            if (values.length == 1) {
+                val = convertValue(values[0], fieldType);
+            } else {
+                if (List.class.isAssignableFrom(fieldType)) {
+                    List<Object> list = (List<Object>) lastField.get(current);
+                    if (list == null) {
+                        list = new ArrayList<>();
+                        lastField.set(current, list);
+                    }
+                    for (String v : values) {
+                        list.add(convertValue(v, String.class)); // Assume List<String> pour hobbies
+                    }
+                    return;
+                } else {
+                    val = values; // String[]
+                }
+            }
+            lastField.set(current, val);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    private Field getField(Class<?> clazz, String name) {
+        try {
+            return clazz.getDeclaredField(name);
+        } catch (NoSuchFieldException e) {
+            return null;
         }
     }
 
