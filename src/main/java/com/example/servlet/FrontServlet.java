@@ -1,6 +1,8 @@
 package com.example.servlet;
 
 import java.io.*;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -8,6 +10,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.lang.reflect.ParameterizedType;
@@ -197,82 +200,86 @@ public class FrontServlet extends HttpServlet {
             for (int i = 0; i < parameters.length; i++) {
                 Parameter param = parameters[i];
                 Class<?> paramType = param.getType();
-                String defaultParamName = param.getName();
-                String value = null;
-                boolean required = true;
+                String paramName = param.getName();
 
+                // 1. Cas spécial : Map<String, Object>
                 if (Map.class.isAssignableFrom(paramType)) {
-                    // Vérifier les types génériques
                     Type genericType = param.getParameterizedType();
-
-                    if (genericType instanceof ParameterizedType) {
-                        ParameterizedType pType = (ParameterizedType) genericType;
-                        Type[] typeArguments = pType.getActualTypeArguments();
-
-                        if (typeArguments.length >= 2) {
-                            // Vérifier si la clé est String et la valeur Object
-                            boolean isKeyString = typeArguments[0] == String.class;
-                            boolean isValueObject = typeArguments[1] == Object.class;
-
-                            if (isKeyString && isValueObject) {
-                                System.out.println("Map<String, Object> détecté");
-                                // Créer la Map avec les types spécifiques
-                                Map<String, Object> allParams = new HashMap<>();
-                                req.getParameterMap().forEach((key, values) -> {
-                                    if (values.length == 1) {
-                                        allParams.put(key, values[0]);
-                                    } else {
-                                        allParams.put(key, values);
-                                    }
-                                });
-                                args[i] = allParams;
-                            } else {
-                                System.out.println("Map d'un autre type: " +
-                                        typeArguments[0] + ", " + typeArguments[1]);
-                                // Gérer d'autres types de Map si nécessaire
-                            }
+                    if (genericType instanceof ParameterizedType pType) {
+                        Type[] argsTypes = pType.getActualTypeArguments();
+                        if (argsTypes.length == 2 && argsTypes[0] == String.class && argsTypes[1] == Object.class) {
+                            Map<String, Object> allParams = new HashMap<>();
+                            req.getParameterMap().forEach((key, values) -> {
+                                allParams.put(key, values.length == 1 ? values[0] : values);
+                            });
+                            args[i] = allParams;
+                            continue; // ← Très important
                         }
+                    }
+                    args[i] = null;
+                    continue;
+                }
+
+                // 2. Cas objet custom (binding automatique)
+                // On vérifie que ce n'est PAS un type primitif, String, Map, Collection,
+                // tableau
+                boolean isSimpleType = paramType.isPrimitive() ||
+                        paramType.equals(String.class) ||
+                        Number.class.isAssignableFrom(paramType) ||
+                        paramType.equals(Boolean.class) ||
+                        Map.class.isAssignableFrom(paramType) ||
+                        Collection.class.isAssignableFrom(paramType) ||
+                        paramType.isArray();
+
+                if (!isSimpleType && !paramType.getName().startsWith("java.")
+                        && !paramType.getName().startsWith("jakarta.")) {
+                    // C'est un objet custom du projet
+                    try {
+                        Object obj = paramType.getDeclaredConstructor().newInstance();
+                        String prefix = paramType.getSimpleName() + ".";
+
+                        req.getParameterMap().forEach((key, values) -> {
+                            if (key.startsWith(prefix)) {
+                                String propertyPath = key.substring(prefix.length());
+                                setPropertyByPath(obj, propertyPath, values);
+                            }
+                        });
+
+                        args[i] = obj;
+                        continue; // ← CRUCIAL : on sort pour ne pas retomber dans le fallback
+                    } catch (Exception e) {
+                        // Si création échoue, on laisse null ou on log
+                        args[i] = null;
                     }
                     continue;
                 }
 
-                // Check @VariableChemin
+                // 3. Cas normaux : @VariableChemin, @ParametreRequete, fallback
+                String value = null;
+                boolean required = true;
+
                 if (param.isAnnotationPresent(VariableChemin.class)) {
-                    VariableChemin pv = param.getAnnotation(VariableChemin.class);
-                    String paramName = pv.value().isEmpty() ? defaultParamName : pv.value();
-                    required = pv.required();
-                    value = pathParams.get(paramName); // Cherche seulement dans pathParams
-                }
-                // Check @ParametreRequete
-                else if (param.isAnnotationPresent(ParametreRequete.class)) {
-                    ParametreRequete rp = param.getAnnotation(ParametreRequete.class);
-                    String paramName = rp.value().isEmpty() ? defaultParamName : rp.value();
-                    required = rp.required();
-                    value = req.getParameter(paramName); // Cherche seulement dans query/form params
-                }
-                // Fallback : comportement actuel (path > query)
-                else {
-                    String paramName = defaultParamName;
-                    value = pathParams.get(paramName); // Priorité path
-                    if (value == null) {
-                        value = req.getParameter(paramName); // Puis query/form
-                    }
+                    VariableChemin ann = param.getAnnotation(VariableChemin.class);
+                    paramName = ann.value().isEmpty() ? paramName : ann.value();
+                    required = ann.required();
+                    value = pathParams.get(paramName);
+                } else if (param.isAnnotationPresent(ParametreRequete.class)) {
+                    ParametreRequete ann = param.getAnnotation(ParametreRequete.class);
+                    paramName = ann.value().isEmpty() ? paramName : ann.value();
+                    required = ann.required();
+                    value = req.getParameter(paramName);
+                } else {
+                    value = pathParams.get(paramName);
+                    if (value == null)
+                        value = req.getParameter(paramName);
                 }
 
-                if (value != null) {
-                    args[i] = convertValue(value, param.getType());
+                if (value != null && !value.isEmpty()) {
+                    args[i] = convertValue(value, paramType);
+                } else if (required) {
+                    throw new IllegalArgumentException("Paramètre requis manquant : " + paramName);
                 } else {
-                    // Paramètre manquant
-                    if (required) {
-                        if (param.getType().isPrimitive()) {
-                            throw new IllegalArgumentException(
-                                    "Paramètre obligatoire manquant : " + defaultParamName +
-                                            " (type primitif " + param.getType().getSimpleName() + ")");
-                        } else {
-                            throw new IllegalArgumentException("Paramètre obligatoire manquant : " + defaultParamName);
-                        }
-                    }
-                    args[i] = null; // OK pour types non-primitifs si non required
+                    args[i] = null;
                 }
             }
 
@@ -311,6 +318,78 @@ public class FrontServlet extends HttpServlet {
         } catch (Exception e) {
             ViewHelper.showError(res, "Erreur lors de l'invocation de la méthode",
                     e.getCause() != null ? e.getCause() : e);
+        }
+    }
+
+    // Nouvelle méthode helper pour set les properties par path (gère imbriqués et
+    // listes)
+    private void setPropertyByPath(Object obj, String path, String[] values) {
+        String[] parts = path.split("\\.");
+        Object current = obj;
+
+        for (int j = 0; j < parts.length - 1; j++) {
+            String part = parts[j];
+            Field field = getField(current.getClass(), part);
+            if (field == null)
+                return; // Ignorer si non trouvé
+
+            field.setAccessible(true);
+            try {
+                Object next = field.get(current);
+                if (next == null) {
+                    if (List.class.isAssignableFrom(field.getType())) {
+                        next = new ArrayList<>();
+                        field.set(current, next);
+                    } else {
+                        next = field.getType().getDeclaredConstructor().newInstance();
+                        field.set(current, next);
+                    }
+                }
+                current = next;
+            } catch (Exception e) {
+                e.printStackTrace();
+                return;
+            }
+        }
+
+        // Dernière partie : set la valeur
+        String lastPart = parts[parts.length - 1];
+        Field lastField = getField(current.getClass(), lastPart);
+        if (lastField == null)
+            return;
+
+        lastField.setAccessible(true);
+        try {
+            Class<?> fieldType = lastField.getType();
+            Object val;
+            if (values.length == 1) {
+                val = convertValue(values[0], fieldType);
+            } else {
+                if (List.class.isAssignableFrom(fieldType)) {
+                    List<Object> list = (List<Object>) lastField.get(current);
+                    if (list == null) {
+                        list = new ArrayList<>();
+                        lastField.set(current, list);
+                    }
+                    for (String v : values) {
+                        list.add(convertValue(v, String.class)); // Assume List<String> pour hobbies
+                    }
+                    return;
+                } else {
+                    val = values; // String[]
+                }
+            }
+            lastField.set(current, val);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    private Field getField(Class<?> clazz, String name) {
+        try {
+            return clazz.getDeclaredField(name);
+        } catch (NoSuchFieldException e) {
+            return null;
         }
     }
 
