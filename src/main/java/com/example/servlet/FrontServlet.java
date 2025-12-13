@@ -149,11 +149,17 @@ public class FrontServlet extends HttpServlet {
     }
 
     private Object convertValue(String value, Class<?> type) {
-        if (type.equals(Integer.class) || type.equals(int.class)) {
+        if (type == int.class || type == Integer.class) {
             return Integer.parseInt(value);
         }
-        if (type.equals(Double.class) || type.equals(double.class)) {
+        if (type == double.class || type == Double.class) {
             return Double.parseDouble(value);
+        }
+        if (type == long.class || type == Long.class) {
+            return Long.parseLong(value);
+        }
+        if (type == boolean.class || type == Boolean.class) {
+            return Boolean.parseBoolean(value);
         }
         return value; // String par défaut
     }
