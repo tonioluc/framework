@@ -4,7 +4,14 @@ import java.util.HashMap;
 import java.util.Map;
 
 public class ModelView {
+    public ModelView() {
+    }
+
     private String viewName;
+    public void setViewName(String viewName) {
+        this.viewName = viewName;
+    }
+
     private Map<String, Object> data = new HashMap<>();
 
     public ModelView(String viewName) {
