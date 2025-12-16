@@ -17,6 +17,7 @@ import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 
 import com.example.annotation.ParametreRequete;
+import com.example.annotation.JsonReturn;
 import com.example.annotation.VariableChemin;
 import com.example.utils.AnnotationScanner;
 import com.example.utils.InfoUrl;
@@ -288,7 +289,45 @@ public class FrontServlet extends HttpServlet {
 
             // 6. Gestion du retour
             if (result instanceof ModelView mv) {
-                // Ajout des données dans la request
+                boolean returnJson = method.isAnnotationPresent(JsonReturn.class);
+
+                if (returnJson) {
+                    Object payload = null;
+                    Map<String, Object> dataMap = mv.getData();
+                    if (dataMap != null && !dataMap.isEmpty()) {
+                        if (dataMap.containsKey("data")) {
+                            payload = dataMap.get("data");
+                        } else if (dataMap.size() == 1) {
+                            payload = dataMap.values().iterator().next();
+                        } else {
+                            // Plusieurs clés: retourner toute la map telle quelle
+                            payload = dataMap;
+                        }
+                    }
+
+                    Map<String, Object> responseBody = new HashMap<>();
+                    responseBody.put("status", "succes");
+                    responseBody.put("code", 200);
+
+                    if (payload instanceof Collection<?>) {
+                        Collection<?> coll = (Collection<?>) payload;
+                        responseBody.put("count", coll.size());
+                        responseBody.put("data", coll);
+                    } else {
+                        responseBody.put("data", payload);
+                    }
+
+                    // Sérialisation JSON via librairie (ex: Gson) si dispo, sinon basique
+                    String json = toJson(responseBody);
+                    res.setContentType("application/json; charset=UTF-8");
+                    res.setStatus(HttpServletResponse.SC_OK);
+                    try (PrintWriter out = res.getWriter()) {
+                        out.write(json);
+                    }
+                    return;
+                }
+
+                // Ajout des données dans la request (mode MVC)
                 if (mv.getData() != null) {
                     mv.getData().forEach(req::setAttribute);
                 }
@@ -323,6 +362,7 @@ public class FrontServlet extends HttpServlet {
 
     // Nouvelle méthode helper pour set les properties par path (gère imbriqués et
     // listes)
+    @SuppressWarnings("unchecked")
     private void setPropertyByPath(Object obj, String path, String[] values) {
         String[] parts = path.split("\\.");
         Object current = obj;
@@ -391,6 +431,58 @@ public class FrontServlet extends HttpServlet {
         } catch (NoSuchFieldException e) {
             return null;
         }
+    }
+
+    //  transforme un objet en JSON basique (sans librairie externe)
+    private String toJson(Object obj) {
+        if (obj == null) return "null";
+        if (obj instanceof String s) return '"' + escape(s) + '"';
+        if (obj instanceof Number || obj instanceof Boolean) return String.valueOf(obj);
+        if (obj instanceof Map<?,?> map) {
+            StringBuilder sb = new StringBuilder();
+            sb.append("{");
+            boolean first = true;
+            for (Map.Entry<?,?> en : map.entrySet()) {
+                if (!first) sb.append(",");
+                first = false;
+                sb.append('"').append(escape(String.valueOf(en.getKey()))).append('"').append(":");
+                sb.append(toJson(en.getValue()));
+            }
+            sb.append("}");
+            return sb.toString();
+        }
+        if (obj instanceof Collection<?> col) {
+            StringBuilder sb = new StringBuilder();
+            sb.append("[");
+            boolean first = true;
+            for (Object it : col) {
+                if (!first) sb.append(",");
+                first = false;
+                sb.append(toJson(it));
+            }
+            sb.append("]");
+            return sb.toString();
+        }
+        // Objet custom : sérialiser ses champs publics/privés par réflexion simple
+        StringBuilder sb = new StringBuilder();
+        sb.append("{");
+        boolean first = true;
+        for (Field f : obj.getClass().getDeclaredFields()) {
+            f.setAccessible(true);
+            try {
+                Object v = f.get(obj);
+                if (!first) sb.append(",");
+                first = false;
+                sb.append('"').append(escape(f.getName())).append('"').append(":");
+                sb.append(toJson(v));
+            } catch (IllegalAccessException ignored) {}
+        }
+        sb.append("}");
+        return sb.toString();
+    }
+
+    private String escape(String s) {
+        return s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r");
     }
 
     private void defaultServe(HttpServletRequest req, HttpServletResponse res) throws ServletException, IOException {
