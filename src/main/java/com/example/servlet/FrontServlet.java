@@ -27,8 +27,10 @@ import com.example.utils.ViewHelper;
 import jakarta.servlet.*;
 import jakarta.servlet.annotation.*;
 import jakarta.servlet.http.*;
+import jakarta.servlet.http.Part;
 
 @WebServlet("/")
+@MultipartConfig
 public class FrontServlet extends HttpServlet {
 
     RequestDispatcher defaultDispatcher;
@@ -198,6 +200,8 @@ public class FrontServlet extends HttpServlet {
             // 4. Résolution des paramètres avec support des annotations
             Parameter[] parameters = method.getParameters();
             Object[] args = new Object[parameters.length];
+            String contentType = req.getContentType();
+            boolean isMultipart = contentType != null && contentType.toLowerCase().startsWith("multipart/");
             for (int i = 0; i < parameters.length; i++) {
                 Parameter param = parameters[i];
                 Class<?> paramType = param.getType();
@@ -208,6 +212,27 @@ public class FrontServlet extends HttpServlet {
                     Type genericType = param.getParameterizedType();
                     if (genericType instanceof ParameterizedType pType) {
                         Type[] argsTypes = pType.getActualTypeArguments();
+                        // 1.a Cas fichiers upload: Map<String, byte[]>
+                        if (argsTypes.length == 2 && argsTypes[0] == String.class && isByteArrayType(argsTypes[1])) {
+                            Map<String, byte[]> fileParams = new HashMap<>();
+                            if (isMultipart) {
+                                try {
+                                    for (Part part : req.getParts()) {
+                                        String submittedName = part.getSubmittedFileName();
+                                        if (submittedName != null && part.getSize() > 0) {
+                                            byte[] bytes = readPartBytes(part);
+                                            // Clé: nom de fichier soumis pour permettre un traitement côté utilisateur
+                                            fileParams.put(submittedName, bytes);
+                                        }
+                                    }
+                                } catch (Exception ignored) {
+                                    // Laisser map vide si aucune part ou en cas d'erreur
+                                }
+                            }
+                            args[i] = fileParams;
+                            continue; // ← important
+                        }
+                        // 1.b Cas paramètres standards: Map<String, Object>
                         if (argsTypes.length == 2 && argsTypes[0] == String.class && argsTypes[1] == Object.class) {
                             Map<String, Object> allParams = new HashMap<>();
                             req.getParameterMap().forEach((key, values) -> {
@@ -430,6 +455,26 @@ public class FrontServlet extends HttpServlet {
             return clazz.getDeclaredField(name);
         } catch (NoSuchFieldException e) {
             return null;
+        }
+    }
+
+    // Détecte si un Type correspond à byte[]
+    private boolean isByteArrayType(Type t) {
+        if (t instanceof Class<?> c) {
+            return c.isArray() && c.getComponentType() == byte.class;
+        }
+        return false;
+    }
+
+    // Lecture complète des bytes d'un Part de façon compatible
+    private byte[] readPartBytes(Part part) throws IOException {
+        try (InputStream in = part.getInputStream(); ByteArrayOutputStream bos = new ByteArrayOutputStream()) {
+            byte[] buffer = new byte[8192];
+            int read;
+            while ((read = in.read(buffer)) != -1) {
+                bos.write(buffer, 0, read);
+            }
+            return bos.toByteArray();
         }
     }
 
